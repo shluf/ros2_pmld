@@ -13,6 +13,8 @@ venv/
 assets/bags/*
 !.gitkeep
 
+tello-ros2
+
 **/.vscode/
 *.natvis
 .log

@@ -19,8 +19,6 @@ function show_menu() {
 }
 
 function build_workspace() {
-    source $INIT_SCRIPT
-
     echo "[INFO] Building workspace..."
     cd "$WORKSPACE"
     colcon build --symlink-install
@@ -28,13 +26,11 @@ function build_workspace() {
 }
 
 function run_simulation() {
-    source $INIT_SCRIPT
     echo "[INFO] Launching Gazebo simulation..."
     gnome-terminal -- bash -c "source $INIT_SCRIPT; ros2 launch $PKG_NAME new_track.launch.py; exec bash"
 }
 
 function run_node() {
-    source $INIT_SCRIPT
     echo "[INFO] Running follower node..."
     gnome-terminal -- bash -c "source $INIT_SCRIPT; ros2 run $PKG_NAME follower_node; exec bash"
 }
