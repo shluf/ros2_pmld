@@ -8,6 +8,8 @@ output_videos/
 output_data/
 imgui.ini
 
+**/__pycache__/
+
 venv/
 
 assets/bags/*
