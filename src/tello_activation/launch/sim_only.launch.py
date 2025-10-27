@@ -1,15 +1,19 @@
-"""Launch Gazebo simulation with keyboard controller"""
-
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import ExecuteProcess, IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import ExecuteProcess, DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
-    ns = 'drone1'
+    namespace_arg = DeclareLaunchArgument(
+        'namespace',
+        default_value='drone1',
+        description='Namespace for the simulated drone'
+    )
+    
+    ns = LaunchConfiguration('namespace')
     
     # Paths
     tello_gazebo_dir = get_package_share_directory('tello_gazebo')
@@ -19,14 +23,19 @@ def generate_launch_description():
     urdf_path = os.path.join(tello_description_dir, 'urdf', 'tello_1.urdf')
 
     return LaunchDescription([
+        namespace_arg,
+        
         # Launch Gazebo
-        ExecuteProcess(cmd=[
-            'gazebo',
-            '--verbose',
-            '-s', 'libgazebo_ros_init.so',
-            '-s', 'libgazebo_ros_factory.so',
-            world_path
-        ], output='screen'),
+        ExecuteProcess(
+            cmd=[
+                'gazebo',
+                '--verbose',
+                '-s', 'libgazebo_ros_init.so',
+                '-s', 'libgazebo_ros_factory.so',
+                world_path
+            ],
+            output='screen'
+        ),
 
         # Spawn tello model
         Node(
@@ -43,19 +52,5 @@ def generate_launch_description():
             output='screen',
             arguments=[urdf_path],
             namespace=ns
-        ),
-
-        # Keyboard controller
-        Node(
-            package='tello_keyboard',
-            executable='keyboard_controller',
-            name='keyboard_controller',
-            output='screen',
-            parameters=[{
-                'namespace': ns,
-                'speed': 0.5,
-                'yaw_speed': 0.5,
-            }],
-            prefix='gnome-terminal --'
         ),
     ])

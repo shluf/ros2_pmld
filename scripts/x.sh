@@ -11,10 +11,11 @@ function show_menu() {
     echo "1) Build workspace"
     echo "2) Run Gazebo simulation"
     echo "3) Clean & relaunch Gazebo sim"
-    echo "4) Run keyboard controller"
+    echo "4) Run keyboard controller (sim)"
+    echo "5) Connect to REAL drone"
     echo "0) Exit"
     echo "=============================================="
-    read -p "Pilih opsi [0-4]: " choice
+    read -p "Pilih opsi [0-5]: " choice
 }
 
 function build_workspace() {
@@ -26,13 +27,20 @@ function build_workspace() {
 
 function run_simulation() {
     echo "[INFO] Launching Gazebo simulation..."
-    gnome-terminal -- bash -c "source $INIT_SCRIPT; ros2 launch tello_gazebo simple_launch.py; exec bash"
+    source $INIT_SCRIPT
+    ros2 launch tello_activation sim_drone.launch.py
 }
 
 function run_keyboard() {
     echo "[INFO] Running keyboard controller..."
     source $INIT_SCRIPT
     ros2 run tello_keyboard keyboard_controller --ros-args -p namespace:=drone1
+}
+
+function connect_tello() {
+    echo "[INFO] Connecting to real Tello drone..."
+    source $INIT_SCRIPT
+    source "$WORKSPACE/scripts/connect_tello.sh"
 }
 
 function relaunch_tello_sim() {
@@ -62,12 +70,19 @@ if [ $# -gt 0 ]; then
             return 0 2>/dev/null || exit 0
             ;;
         run-sim|sim)
-            run_simulation
+            source "$INIT_SCRIPT"
+            ros2 launch tello_activation sim_drone.launch.py
             return 0 2>/dev/null || exit 0
             ;;
         keyboard|kb)
             source "$INIT_SCRIPT"
             ros2 run tello_keyboard keyboard_controller --ros-args -p namespace:=drone1
+            return 0 2>/dev/null || exit 0
+            ;;
+        real|real-drone|connect)
+            source "$INIT_SCRIPT"
+            echo "[INFO] Launching real drone connection..."
+            source "$WORKSPACE/scripts/connect_tello.sh"
             return 0 2>/dev/null || exit 0
             ;;
         relaunch-sim|rsim)
@@ -84,11 +99,12 @@ if [ $# -gt 0 ]; then
             return 0 2>/dev/null || exit 0
             ;;
         help|-h|--help)
-            echo "Usage: $0 [build|run-sim|keyboard|sim-keyboard|help]"
+            echo "Usage: $0 [build|run-sim|keyboard|real|help]"
             echo ""
             echo "  build       : Build workspace"
             echo "  run-sim     : Jalankan simulasi Gazebo"
-            echo "  keyboard    : Jalankan keyboard controller"
+            echo "  keyboard    : Jalankan keyboard controller (simulasi)"
+            echo "  real        : Connect to REAL Tello drone"
             echo "  help        : Tampilkan bantuan"
             echo ""
             echo "Advanced:"
@@ -117,6 +133,9 @@ while true; do
             ;;
         4)
             run_keyboard
+            ;;
+        5)
+            connect_tello
             ;;
         0|q|Q)
             echo "Keluar dari menu. Bye!"
