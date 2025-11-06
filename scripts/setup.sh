@@ -1,10 +1,10 @@
 #!/bin/bash
 
-echo "Installing ROS2 $(echo $ROS_DISTRO) packages..."
+echo "Installing ROS2 humble packages..."
 sudo apt install -y \
-    ros-$(echo $ROS_DISTRO)-gazebo-ros-pkgs \
-    ros-$(echo $ROS_DISTRO)-cv-bridge \
-    ros-$(echo $ROS_DISTRO)-camera-calibration-parsers
+    ros-humble-gazebo-ros-pkgs \
+    ros-humble-cv-bridge \
+    ros-humble-camera-calibration-parsers
 
 echo ""
 echo "Installing system dependencies..."

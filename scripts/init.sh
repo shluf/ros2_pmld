@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source /opt/ros/$(echo $ROS_DISTRO)/setup.bash
+source /opt/ros/humble/setup.bash
 if [ -f install/setup.bash ]; then
     source $(pwd)/install/setup.bash
 fi
