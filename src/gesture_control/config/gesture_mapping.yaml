@@ -1,0 +1,167 @@
+# Hand Signs (Static Gestures)
+# ID dari keypoint classifier (lihat keypoint_classifier_label.csv)
+# 0: Open, 1: Close, 2: Pointer, 3: OK
+hand_signs:
+  0: "move_forward"      # Open hand - drone bergerak maju
+  1: "move_backward"  # Close hand - drone hover dan berputar mengikuti posisi tangan
+  2: "rotate_with_hand"     # Pointer - drone bergerak mundur
+  3: "land"              # OK gesture - landing
+
+# Finger Gestures (Dynamic Movements)
+# ID dari point history classifier (lihat point_history_classifier_label.csv)
+# 0: Stop, 1: Clockwise, 2: Counter Clockwise, 3: Move
+finger_gestures:
+  0: "hover"        # Stop - hover in place
+  1: "flip"    # Clockwise rotation
+  2: "rotate_ccw"   # Counter-clockwise rotation
+  3: "move"         # Move - will use hand position for direction
+
+# Velocity Settings
+# Kecepatan untuk setiap jenis gerakan (dalam m/s atau rad/s)
+velocity_settings:
+  linear_speed: 0.5       # Kecepatan linear (forward/backward/left/right) dalam m/s
+  angular_speed: 0.5      # Kecepatan angular (rotation) dalam rad/s
+  vertical_speed: 0.3     # Kecepatan vertikal (up/down) dalam m/s
+  
+  # Scaling factors untuk fine control
+  slow_mode_factor: 0.5   # Multiply speeds by this in slow mode
+  fast_mode_factor: 1.5   # Multiply speeds by this in fast mode
+
+# Safety Settings
+safety:
+  enable_confirmation: true        # Require gesture hold before executing
+  gesture_hold_time: 1.0          # Seconds to hold gesture for confirmation
+  no_gesture_timeout: 0.5         # Seconds before auto-hover if no gesture
+  emergency_priority: true        # Emergency gesture always has priority
+  
+  # Gesture-specific hold times (overrides default)
+  gesture_specific_hold_times:
+    takeoff: 1.5      # Takeoff memerlukan hold lebih lama
+    land: 1.5         # Landing juga memerlukan hold lebih lama
+    emergency: 0.3    # Emergency harus cepat
+    flip: 2.0         # Flip memerlukan konfirmasi yang lebih lama
+
+# Hand Position to Movement Mapping
+# Digunakan ketika gesture adalah "rotate_with_hand" atau "move"
+position_mapping:
+  enabled: true
+  deadzone: 0.2              # Center deadzone (0-0.5) untuk menghindari drift
+  
+  # Coordinate system:
+  # x: 0 (left) to 1 (right)
+  # y: 0 (top) to 1 (bottom)
+  
+  # Movement zones
+  zones:
+    center:                  # Deadzone di tengah
+      x_range: [0.4, 0.6]
+      y_range: [0.4, 0.6]
+      action: "hover"
+    
+    left:
+      x_range: [0.0, 0.4]
+      action: "move_left"
+    
+    right:
+      x_range: [0.6, 1.0]
+      action: "move_right"
+    
+    up:
+      y_range: [0.0, 0.4]
+      action: "move_up"
+    
+    down:
+      y_range: [0.6, 1.0]
+      action: "move_down"
+
+# Advanced Features
+advanced:
+  # Multi-gesture sequences
+  sequences:
+    enabled: false
+    timeout: 3.0              # Seconds between gestures in sequence
+    
+    # Contoh sequence: open hand -> close hand -> pointing = auto land sequence
+    defined_sequences:
+      - gestures: [0, 1, 2]
+        action: "auto_land"
+      - gestures: [4, 1, 1]
+        action: "circle_pattern"
+  
+  # Gesture modifiers
+  modifiers:
+    enabled: false
+    
+    # Gunakan second hand untuk modifier
+    two_hand_mode: false
+    
+    # Contoh: tangan kiri untuk speed control, tangan kanan untuk direction
+    left_hand_function: "speed_control"
+    right_hand_function: "direction_control"
+
+# Logging & Debug
+logging:
+  log_gestures: true          # Log setiap gesture yang terdeteksi
+  log_commands: true          # Log setiap command yang dikirim
+  log_level: "INFO"           # DEBUG, INFO, WARN, ERROR
+  
+  # Save gesture data for analysis
+  save_data:
+    enabled: false
+    directory: "gesture_logs"
+    format: "csv"             # csv, json
+
+# Camera Settings
+camera:
+  device_id: 0
+  width: 960
+  height: 540
+  fps: 30
+  
+  # MediaPipe settings
+  mediapipe:
+    static_image_mode: false
+    max_num_hands: 1
+    min_detection_confidence: 0.7
+    min_tracking_confidence: 0.5
+
+# Model Settings
+model:
+  keypoint_classifier:
+    path: "model/keypoint_classifier/keypoint_classifier.tflite"
+    labels: "model/keypoint_classifier/keypoint_classifier_label.csv"
+  
+  point_history_classifier:
+    path: "model/point_history_classifier/point_history_classifier.tflite"
+    labels: "model/point_history_classifier/point_history_classifier_label.csv"
+    history_length: 16        # Number of points in history
+
+# ROS2 Settings
+ros2:
+  namespace: ""
+  
+  # Topic names
+  topics:
+    cmd_vel: "/cmd_vel"
+    tello_action: "/tello_action"
+    flight_data: "/flight_data"
+    gesture_status: "/gesture_recognition/detected_gesture"
+    safety_status: "/gesture_recognition/safety_status"
+  
+  # QoS settings
+  qos:
+    reliability: "reliable"   # reliable, best_effort
+    history: "keep_last"
+    depth: 10
+
+# Testing & Calibration
+testing:
+  simulation_mode: false      # Use Gazebo simulation
+  verbose_output: true        # Print detailed info
+  show_camera_feed: true      # Show camera window with landmarks
+  
+  # Gesture testing
+  test_mode:
+    enabled: false
+    record_gestures: true
+    playback_mode: false

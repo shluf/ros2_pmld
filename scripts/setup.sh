@@ -1,6 +1,27 @@
 #!/bin/bash
 
-sudo apt install ros-humble-gazebo-ros-pkgs ros-humble-cv-bridge ros-humble-camera-calibration-parsers -y
+echo "Installing ROS2 $(echo $ROS_DISTRO) packages..."
+sudo apt install -y \
+    ros-$(echo $ROS_DISTRO)-gazebo-ros-pkgs \
+    ros-$(echo $ROS_DISTRO)-cv-bridge \
+    ros-$(echo $ROS_DISTRO)-camera-calibration-parsers
 
-sudo apt install libasio-dev python3-opencv -y
-# pip install opencv-python cv_bridge
+echo ""
+echo "Installing system dependencies..."
+sudo apt install -y \
+    libasio-dev \
+    python3-opencv \
+    python3-numpy \
+    python3-pyqt5
+
+echo ""
+echo "Installing Python packages..."
+pip3 install mediapipe tflite-runtime
+
+# echo ""
+# echo "Fixing Python build dependencies..."
+# pip3 install 'setuptools>=30.3.0,<80' --force-reinstall --quiet
+# pip3 install --upgrade packaging wheel --quiet
+
+echo ""
+echo "All Dependencies Installed!"

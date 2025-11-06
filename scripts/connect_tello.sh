@@ -1,6 +1,6 @@
 #!/bin/bash
 
-WORKSPACE=~/ros2_pmld
+WORKSPACE=$(pwd)
 INIT_SCRIPT="$WORKSPACE/scripts/init.sh"
 
 
@@ -41,7 +41,7 @@ else
     read -p "Lanjutkan anyway? (y/n): " answer
     if [[ ! "$answer" =~ ^[Yy]$ ]]; then
         echo "Dibatalkan."
-        exit 1
+        # exit 1
     fi
     CONNECTED=false
 fi
@@ -51,8 +51,8 @@ echo "╔═══════════════════════�
 echo "║                    PILIH MODE                             ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo ""
-echo "1) Driver only (untuk debugging)"
-echo "2) Driver + Keyboard controller (RECOMMENDED)"
+echo "1) Driver only"
+echo "2) Driver + Keyboard controller"
 echo "3) Driver + Joystick controller"
 echo "0) Cancel"
 echo ""
@@ -94,6 +94,6 @@ case $mode in
         ;;
     0|*)
         echo "Cancelled."
-        exit 0
+        # exit 0
         ;;
 esac
