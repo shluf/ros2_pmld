@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QGridLayout, QSlider, QProgressBar, QTabWidget,
                              QFrame)
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QCoreApplication
-from PyQt5.QtGui import QImage, QPixmap, QFont
+from PyQt5.QtGui import QImage, QPixmap, QFont, QPainter, QColor, QPen
 
 from sensor_msgs.msg import Image, CompressedImage
 from geometry_msgs.msg import Twist
@@ -20,6 +20,7 @@ from tello_msgs.srv import TelloAction
 from std_msgs.msg import String, Bool
 
 import numpy as np
+import math
 
 cv2 = None
 CvBridge = None
@@ -228,18 +229,7 @@ class VideoWidget(QWidget):
         self.video_label.setAlignment(Qt.AlignCenter)
         self.video_label.setText("Waiting for video stream...")
         
-        # Info overlay
-        self.info_label = QLabel()
-        self.info_label.setStyleSheet("""
-            color: white; 
-            background-color: rgba(0, 0, 0, 150); 
-            padding: 5px;
-            font-size: 12px;
-        """)
-        self.info_label.setText("FPS: -- | Resolution: --")
-        
         layout.addWidget(self.video_label)
-        layout.addWidget(self.info_label)
         
         self.setLayout(layout)
         
@@ -249,6 +239,16 @@ class VideoWidget(QWidget):
         self.fps_timer.timeout.connect(self.update_fps)
         self.fps_timer.start(1000)
         self.current_fps = 0
+        
+        # Overlay telemetry data (dict)
+        self.overlay_telemetry = {}
+        # Keep last pixmap to allow repainting overlay when telemetry updates
+        self._last_pixmap = None
+        # Draw initial overlay on an empty background so the text is visible
+        try:
+            self.update_overlay_telemetry({})
+        except Exception:
+            pass
     
     def update_image(self, cv_image):
         """Update displayed image"""
@@ -270,8 +270,11 @@ class VideoWidget(QWidget):
                 Qt.KeepAspectRatio, 
                 Qt.SmoothTransformation
             )
-            
-            self.video_label.setPixmap(scaled_pixmap)
+
+            # Store last pixmap and draw overlay telemetry on it
+            self._last_pixmap = scaled_pixmap
+            overlayed = self._draw_overlay_on(scaled_pixmap)
+            self.video_label.setPixmap(overlayed)
             
         except Exception as e:
             print(f"Error updating image: {e}")
@@ -280,7 +283,180 @@ class VideoWidget(QWidget):
         """Update FPS counter"""
         self.current_fps = self.frame_count
         self.frame_count = 0
-        self.info_label.setText(f"FPS: {self.current_fps}")
+        # If overlay exists, refresh it to show updated FPS
+        if self._last_pixmap is not None:
+            overlayed = self._draw_overlay_on(self._last_pixmap)
+            self.video_label.setPixmap(overlayed)
+        else:
+            # No video received yet: draw on a blank pixmap of the label size
+            blank = self._make_blank_pixmap()
+            overlayed = self._draw_overlay_on(blank)
+            self.video_label.setPixmap(overlayed)
+
+    def update_overlay_telemetry(self, flight_data: dict):
+        """Update the telemetry dict used for on-screen overlay and repaint if possible."""
+        try:
+            self.overlay_telemetry = flight_data or {}
+            # Refresh overlay if we have a last pixmap, otherwise draw on
+            # a blank pixmap so overlay is visible even with no video.
+            if self._last_pixmap is not None:
+                overlayed = self._draw_overlay_on(self._last_pixmap)
+                self.video_label.setPixmap(overlayed)
+            else:
+                blank = self._make_blank_pixmap()
+                overlayed = self._draw_overlay_on(blank)
+                self.video_label.setPixmap(overlayed)
+        except Exception as e:
+            print(f"Error updating overlay telemetry: {e}")
+
+    def _draw_overlay_on(self, pixmap: QPixmap) -> QPixmap:
+        """Return a copy of pixmap with top-left telemetry overlay drawn."""
+        try:
+            p = QPixmap(pixmap)
+            painter = QPainter(p)
+            painter.setRenderHint(QPainter.TextAntialiasing)
+
+            # Styling / layout
+            margin = 10
+            padding = 8
+            line_height = 20
+            # Slightly larger, more readable font
+            font = QFont("Arial", 12)
+            painter.setFont(font)
+
+            # Prepare lines to show (one per row). Always show labels with
+            # placeholder values when no data is available so the overlay is
+            # obvious during UI development.
+            fd = self.overlay_telemetry or {}
+            lines = []
+            # Battery first (show -- when unknown)
+            battery = fd.get('battery')
+            batt_text = f"{battery}%" if battery is not None else "--"
+            # We'll render a small bar above the text; keep the text line too.
+            lines.append(f"Battery: {batt_text}")
+            # FPS
+            lines.append(f"FPS: {self.current_fps}")
+            # Altitude
+            altitude = fd.get('altitude')
+            alt_text = f"{altitude} cm" if altitude is not None else "--"
+            lines.append(f"Altitude: {alt_text}")
+            # TOF / distance
+            tof = fd.get('tof')
+            tof_text = f"{tof} cm" if tof is not None else "--"
+            lines.append(f"Distance: {tof_text}")
+            # Flight time
+            ft = fd.get('flight_time')
+            ft_text = f"{ft} s" if ft is not None else "--"
+            lines.append(f"Flight Time: {ft_text}")
+            # Temperature (low-high)
+            t_low = fd.get('temperature_low')
+            t_high = fd.get('temperature_high')
+            if t_low is not None or t_high is not None:
+                if t_low is None: t_low = "--"
+                if t_high is None: t_high = "--"
+                lines.append(f"Temp: {t_low}-{t_high} °C")
+            # Attitude (pitch/roll/yaw)
+            pitch = fd.get('pitch')
+            roll = fd.get('roll')
+            yaw = fd.get('yaw')
+            pr_text = f"{pitch}°" if pitch is not None else "--"
+            rr_text = f"{roll}°" if roll is not None else "--"
+            yy_text = f"{yaw}°" if yaw is not None else "--"
+            # Separate rows for pitch, roll, yaw
+            lines.append(f"Pitch: {pr_text}")
+            lines.append(f"Roll: {rr_text}")
+            lines.append(f"Yaw: {yy_text}")
+
+            # Velocity per axis and overall speed magnitude
+            vx = fd.get('velocity_x')
+            vy = fd.get('velocity_y')
+            vz = fd.get('velocity_z')
+            vx_text = f"{vx} cm/s" if vx is not None else "--"
+            vy_text = f"{vy} cm/s" if vy is not None else "--"
+            vz_text = f"{vz} cm/s" if vz is not None else "--"
+            lines.append(f"VX: {vx_text}")
+            lines.append(f"VY: {vy_text}")
+            lines.append(f"VZ: {vz_text}")
+            # Speed magnitude (use zeros if missing)
+            try:
+                sx = float(vx) if vx is not None else 0.0
+                sy = float(vy) if vy is not None else 0.0
+                sz = float(vz) if vz is not None else 0.0
+                speed = math.sqrt(sx*sx + sy*sy + sz*sz)
+                lines.append(f"Speed: {int(speed)} cm/s")
+            except Exception:
+                lines.append("Speed: --")
+
+            # Compute background rect size (responsive to pixmap width)
+            box_width = min(320, int(pixmap.width() * 0.45))
+            box_height = padding * 2 + line_height * max(1, len(lines))
+
+            # Draw translucent background (darker for readability)
+            bg_color = QColor(0, 0, 0, 200)
+            painter.fillRect(margin, margin, box_width, box_height, bg_color)
+
+            # Draw battery bar above the text lines (if battery known/unknown still draw empty bar)
+            bar_x = margin + padding
+            bar_y = margin + padding
+            bar_w = min(120, box_width - padding*2)
+            bar_h = 12
+            # Bar background
+            painter.setPen(QColor(120, 120, 120))
+            painter.setBrush(QColor(60, 60, 60))
+            painter.drawRect(bar_x, bar_y, bar_w, bar_h)
+            # Fill proportionally if battery value exists
+            try:
+                if battery is not None:
+                    pct = max(0, min(100, int(battery)))
+                    fill_w = int((pct / 100.0) * (bar_w - 2))
+                    # Choose color based on battery
+                    if pct > 50:
+                        fill_col = QColor(76, 175, 80)  # green
+                    elif pct > 20:
+                        fill_col = QColor(255, 152, 0)  # orange
+                    else:
+                        fill_col = QColor(244, 67, 54)  # red
+                    painter.fillRect(bar_x + 1, bar_y + 1, fill_w, bar_h - 2, fill_col)
+                else:
+                    # unknown battery: draw a faint empty bar (already drawn)
+                    pass
+            except Exception:
+                pass
+
+            # Draw each line of text with a subtle shadow for contrast, starting below the bar
+            x = margin + padding
+            y = bar_y + bar_h + 8 + (line_height - 6)
+            for ln in lines:
+                # Shadow (black, slightly offset)
+                painter.setPen(QColor(0, 0, 0))
+                painter.drawText(x + 1, y + 1, ln)
+                # Main text (white)
+                painter.setPen(QColor(255, 255, 255))
+                painter.drawText(x, y, ln)
+                y += line_height
+
+            painter.end()
+            return p
+        except Exception as e:
+            print(f"Error drawing overlay: {e}")
+            return pixmap
+
+    def _make_blank_pixmap(self) -> QPixmap:
+        """Create a black pixmap matching the video_label size to draw overlay on when
+        no video frames have been received yet."""
+        try:
+            size = self.video_label.size()
+            if size.width() <= 0 or size.height() <= 0:
+                # Fallback to a reasonable default
+                w, h = 640, 480
+            else:
+                w, h = size.width(), size.height()
+            p = QPixmap(w, h)
+            p.fill(QColor(0, 0, 0))
+            return p
+        except Exception as e:
+            print(f"Error creating blank pixmap: {e}")
+            return QPixmap(640, 480)
 
 
 class TelemetryWidget(QWidget):
@@ -814,8 +990,9 @@ class MainWindow(QMainWindow):
         self.video_widget = VideoWidget()
         left_panel.addWidget(self.video_widget, stretch=3)
         
+        # Keep an internal telemetry widget for legacy updates but do not add it
+        # to the layout — telemetry will be shown as an overlay on the video.
         self.telemetry_widget = TelemetryWidget()
-        left_panel.addWidget(self.telemetry_widget, stretch=2)
         
         # Right panel - Controls
         right_panel = QWidget()
@@ -851,7 +1028,13 @@ class MainWindow(QMainWindow):
     
     def update_telemetry(self, flight_data):
         """Update telemetry display"""
-        self.telemetry_widget.update_telemetry(flight_data)
+        # Update the hidden telemetry widget (keeps internal state) and the
+        # video overlay in the top-left of the video display.
+        try:
+            self.telemetry_widget.update_telemetry(flight_data)
+        except Exception:
+            pass
+        self.video_widget.update_overlay_telemetry(flight_data)
     
     def update_gesture(self, gesture):
         """Update gesture status"""
