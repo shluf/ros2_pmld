@@ -15,6 +15,12 @@ import cv2
 from pathlib import Path
 import time
 
+try:
+    from tello_interfaces.msg import ControlMode
+    CONTROL_MODE_AVAILABLE = True
+except ImportError:
+    CONTROL_MODE_AVAILABLE = False
+
 from .gesture_recognition import GestureRecognition
 
 
@@ -83,10 +89,10 @@ class GestureController(Node):
             )
             self.get_logger().info(f'Subscribed to image_raw (namespace: {self.namespace})')
         
-        # Publishers
+        # Publishers - publish to /gesture/cmd_vel for arbitration
         self.cmd_vel_pub = self.create_publisher(
             Twist, 
-            'cmd_vel',
+            '/gesture/cmd_vel',
             qos_reliable
         )
         
@@ -101,6 +107,18 @@ class GestureController(Node):
             '/gesture_recognition/safety_status',
             qos_reliable
         )
+        
+        # Subscribe to control mode
+        if CONTROL_MODE_AVAILABLE:
+            self.mode_sub = self.create_subscription(
+                ControlMode,
+                '/control_mode',
+                self.mode_callback,
+                qos_reliable
+            )
+            self.get_logger().info('Subscribed to /control_mode')
+        else:
+            self.get_logger().warn('ControlMode not available, mode-aware operation disabled')
         
         # Service Clients
         self.tello_action_client = self.create_client(
@@ -146,6 +164,12 @@ class GestureController(Node):
         # NEW: no-gesture flag to track when we are enforcing hover
         self.no_gesture_active = False
         
+        # Mode-aware state
+        self.current_mode = 'manual'  # Default mode
+        self.gesture_mode_active = False
+        self.camera_source = 'drone'  # 'drone' or 'webcam'
+        self.transitioning = False
+        
         # Timer for gesture processing
         self.timer = self.create_timer(0.033, self.process_gestures)  # 30 FPS
         
@@ -157,6 +181,40 @@ class GestureController(Node):
             self.get_logger().info(f'Using drone camera: {self.use_drone_camera}')
         self.get_logger().info(f'Safety mode: {self.enable_safety}')
         self.get_logger().info(f'Gesture hold time: {self.gesture_hold_time}s')
+    
+    def mode_callback(self, msg):
+        """Handle control mode changes."""
+        if CONTROL_MODE_AVAILABLE:
+            mode_changed = msg.mode != self.current_mode
+            camera_changed = msg.camera_source != self.camera_source
+            
+            self.current_mode = msg.mode
+            self.camera_source = msg.camera_source
+            self.transitioning = msg.transitioning
+            self.gesture_mode_active = (msg.mode == 'gesture' and not msg.transitioning)
+            
+            if mode_changed:
+                self.get_logger().info(f'Mode changed to: {self.current_mode}')
+                if self.gesture_mode_active:
+                    self.get_logger().info('✓ Gesture control activated')
+                else:
+                    self.get_logger().info('✗ Gesture control deactivated')
+            
+            if camera_changed:
+                self.get_logger().info(f'Camera source changed to: {self.camera_source}')
+                # Update webcam/drone camera usage
+                if self.camera_source == 'webcam' and self.webcam is None:
+                    self.get_logger().info(f'Opening webcam {self.webcam_id}...')
+                    self.webcam = cv2.VideoCapture(self.webcam_id)
+                    self.webcam.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
+                    self.webcam.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
+                    if not self.webcam.isOpened():
+                        self.get_logger().error(f'Failed to open webcam {self.webcam_id}')
+                        self.webcam = None
+                elif self.camera_source == 'drone' and self.webcam is not None:
+                    self.get_logger().info('Closing webcam, switching to drone camera')
+                    self.webcam.release()
+                    self.webcam = None
     
     def flight_data_callback(self, msg):
         """Monitor drone flight status from FlightData"""
@@ -240,17 +298,34 @@ class GestureController(Node):
     
     def process_gestures(self):
         """Main gesture processing loop"""
-        # Debug mode with webcam
-        if self.debug_mode and self.webcam is not None and not self.use_drone_camera:
-            ret, frame = self.webcam.read()
-            if ret:
-                self.gesture_recognizer.update_frame(frame)
+        # Only process gestures if in gesture mode
+        if CONTROL_MODE_AVAILABLE and not self.gesture_mode_active:
+            return
+        
+        # Handle camera source based on mode
+        if CONTROL_MODE_AVAILABLE and self.camera_source == 'webcam':
+            # Use webcam for gesture detection
+            if self.webcam is not None:
+                ret, frame = self.webcam.read()
+                if ret:
+                    self.gesture_recognizer.update_frame(frame)
+                else:
+                    return
             else:
                 return
-        
-        # Skip if using drone camera but no frame received yet
-        if self.use_drone_camera and not self.received_first_frame:
-            return
+        else:
+            # Use drone camera (original behavior)
+            # Debug mode with webcam (backward compatibility)
+            if self.debug_mode and self.webcam is not None and not self.use_drone_camera:
+                ret, frame = self.webcam.read()
+                if ret:
+                    self.gesture_recognizer.update_frame(frame)
+                else:
+                    return
+            
+            # Skip if using drone camera but no frame received yet
+            if self.use_drone_camera and not self.received_first_frame:
+                return
             
         # Get gesture from recognition system
         hand_sign, finger_gesture, hand_position = self.gesture_recognizer.process()

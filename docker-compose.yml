@@ -1,0 +1,150 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # Main ROS 2 Humble service for drone control system
+  # ============================================================================
+  ros2_drone_control:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime  # Use 'dev' for development image
+      args:
+        - ROS_DISTRO=humble
+    image: ros2_pmld:humble
+    container_name: ros2_drone_control
+    hostname: drone-control
+    
+    # Network configuration
+    network_mode: host  # Required for DDS discovery and Tello UDP communication
+    
+    # Privileged mode for hardware access (camera, network)
+    privileged: true
+    
+    # Environment variables
+    environment:
+      - DISPLAY=${DISPLAY}  # For GUI applications (rviz2, rqt)
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - TELLO_IP=192.168.10.1  # Default Tello drone IP
+      - PYTHONUNBUFFERED=1
+    
+    # Volume mounts
+    volumes:
+      # Source code (for development)
+      - ./src:/root/ros2_ws/src:rw
+      # Config files
+      - ./config:/root/ros2_ws/config:rw
+      # Launch files
+      - ./launch:/root/ros2_ws/launch:rw
+      # X11 socket for GUI
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Shared memory for better DDS performance
+      - /dev/shm:/dev/shm
+      # USB devices (cameras, etc.)
+      - /dev:/dev
+    
+    # Device access
+    devices:
+      - /dev/video0:/dev/video0  # Webcam
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '2.0'
+          memory: 2G
+    
+    # Keep container running
+    stdin_open: true
+    tty: true
+    
+    command: bash
+
+  # ============================================================================
+  # Development service with additional tools
+  # ============================================================================
+  ros2_drone_dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev  # Development stage with extra tools
+    image: ros2_pmld:dev
+    container_name: ros2_drone_dev
+    hostname: drone-dev
+    profiles: ["dev"]  # Only start with --profile dev
+    
+    network_mode: host
+    privileged: true
+    
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - TELLO_IP=192.168.10.1
+      - PYTHONUNBUFFERED=1
+    
+    volumes:
+      - ./src:/root/ros2_ws/src:rw
+      - ./config:/root/ros2_ws/config:rw
+      - ./launch:/root/ros2_ws/launch:rw
+      - ./tests:/root/ros2_ws/tests:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /dev/shm:/dev/shm
+      - /dev:/dev
+      # Persistent build artifacts
+      - ros2_build:/root/ros2_ws/build
+      - ros2_install:/root/ros2_ws/install
+      - ros2_log:/root/ros2_ws/log
+    
+    devices:
+      - /dev/video0:/dev/video0
+    
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    
+    command: bash
+
+  # ============================================================================
+  # Visualization service (RViz2, rqt)
+  # ============================================================================
+  ros2_visualization:
+    image: ros2_pmld:humble
+    container_name: ros2_visualization
+    hostname: drone-viz
+    profiles: ["viz"]  # Only start with --profile viz
+    
+    network_mode: host
+    
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - QT_X11_NO_MITSHM=1
+    
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./config:/root/ros2_ws/config:ro
+    
+    stdin_open: true
+    tty: true
+    
+    command: rviz2
+
+# Named volumes for persistent data
+volumes:
+  ros2_build:
+  ros2_install:
+  ros2_log:
+
+# Networks (if not using host mode)
+# networks:
+#   ros2_network:
+#     driver: bridge
