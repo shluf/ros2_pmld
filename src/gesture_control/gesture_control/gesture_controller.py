@@ -221,10 +221,14 @@ class GestureController(Node):
             self.get_logger().error(f'Failed to load config: {e}')
             # Use default configuration
             self.hand_signs = {
-                0: 'move_forward',
-                1: 'move_backward',
-                2: 'rotate_with_hand',
-                3: 'land'
+                0: "move_forward",
+                1: "hover",
+                2: "move_up",          
+                3: "land",          
+                4: "move_down",     
+                5: "move_backward", 
+                6: "move_left" ,
+                7: "move_right"
             }
             self.finger_gestures = {
                 0: 'hover',
@@ -330,22 +334,30 @@ class GestureController(Node):
             self.send_land()
         elif command == 'emergency':
             self.send_emergency_stop()
-        elif command == 'hover':
-            self.send_hover_command()
-        elif command == 'flip':
-            self.send_flip()
-        elif command == 'rotate_cw':
-            self.send_rotate(1.0)
-        elif command == 'rotate_ccw':
-            self.send_rotate(-1.0)
         elif command == 'move_forward':
             self.send_forward()
+        elif command == 'hover':
+            self.send_hover_command()
+        elif command == 'move_up':
+            self.send_up()
+        elif command == 'flip':
+            self.send_flip()
+        elif command == 'move_down':
+            self.send_down()
         elif command == 'move_backward':
             self.send_backward()
-        elif command == 'rotate_with_hand' and hand_position:
-            self.send_rotate_with_hand(hand_position)
-        elif command == 'move' and hand_position:
-            self.send_movement_from_position(hand_position)
+        elif command == 'move_left':
+            self.send_left()
+        elif command == 'move_right':
+            self.send_right()
+        # elif command == 'rotate_with_hand' and hand_position:
+        #     self.send_rotate_with_hand(hand_position)
+        # elif command == 'move' and hand_position:
+        #     self.send_movement_from_position(hand_position)
+        # elif command == 'rotate_cw':
+        #     self.send_rotate(1.0)
+        # elif command == 'rotate_ccw':
+        #     self.send_rotate(-1.0)
     
     def send_takeoff(self):
         """Send takeoff command"""
@@ -455,6 +467,60 @@ class GestureController(Node):
             self.get_logger().info(f'✈️  Moving backward (speed: {self.velocity_settings["linear_speed"]})')
         else:
             self.get_logger().warn('⚠️  Cannot move backward: Drone is not flying! Use manual takeoff first.')
+    def send_down(self):
+        """Send downward movement command"""
+        if self.is_flying:
+            msg = Twist()
+            msg.linear.x = 0.0
+            msg.linear.y = 0.0
+            msg.linear.z = -self.velocity_settings['vertical_speed']  # turun
+            msg.angular.z = 0.0
+            self.cmd_vel_pub.publish(msg)
+            self.get_logger().info(f'⬇️  Moving DOWN (speed: {self.velocity_settings["vertical_speed"]})')
+        else:
+            self.get_logger().warn('⚠️ Cannot move down: Drone is not flying!')
+    def send_up(self):
+        """Send upward movement command"""
+        if self.is_flying:
+            msg = Twist()
+            msg.linear.x = 0.0
+            msg.linear.y = 0.0
+            msg.linear.z = self.velocity_settings['vertical_speed']  # naik
+            msg.angular.z = 0.0
+            self.cmd_vel_pub.publish(msg)
+            self.get_logger().info(
+                f'⬆️  Moving UP (speed: {self.velocity_settings["vertical_speed"]})'
+            )
+        else:
+            self.get_logger().warn('⚠️ Cannot move up: Drone is not flying!')
+
+    def send_left(self):
+        """Send left movement command"""
+        if self.is_flying:
+            msg = Twist()
+            msg.linear.x = 0.0
+            msg.linear.y = self.velocity_settings['linear_speed']  # kiri
+            msg.linear.z = 0.0
+            msg.angular.z = 0.0
+            self.cmd_vel_pub.publish(msg)
+            self.get_logger().info(f'⬅️  Moving LEFT (speed: {self.velocity_settings["linear_speed"]})')
+        else:
+            self.get_logger().warn('⚠️ Cannot move left: Drone is not flying!')
+
+
+    def send_right(self):
+        """Send right movement command"""
+        if self.is_flying:
+            msg = Twist()
+            msg.linear.x = 0.0
+            msg.linear.y = -self.velocity_settings['linear_speed']  # kanan
+            msg.linear.z = 0.0
+            msg.angular.z = 0.0
+            self.cmd_vel_pub.publish(msg)
+            self.get_logger().info(f'➡️  Moving RIGHT (speed: {self.velocity_settings["linear_speed"]})')
+        else:
+            self.get_logger().warn('⚠️ Cannot move right: Drone is not flying!')
+
     
     def send_rotate_with_hand(self, hand_position):
         """
