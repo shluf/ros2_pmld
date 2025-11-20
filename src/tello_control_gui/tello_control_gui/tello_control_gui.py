@@ -44,6 +44,7 @@ class ROSThread(QThread):
 class SignalEmitter(QThread):
     """QObject wrapper for emitting Qt signals from ROS2 callbacks"""
     image_signal = pyqtSignal(np.ndarray)
+    webcam_image_signal = pyqtSignal(np.ndarray)
     flight_data_signal = pyqtSignal(dict)
     gesture_status_signal = pyqtSignal(str)
 
@@ -121,6 +122,29 @@ class TelloControlNode(Node):
         
         # CV Bridge
         self.bridge = CvBridge()
+
+        # Webcam publisher: publish webcam frames to a dedicated topic by
+        # default so the local webcam doesn't override the drone '/image_raw'
+        # feed when a drone is not present. Set the ROS parameter
+        # 'mirror_webcam_to_image_raw' to True to mirror webcam frames into
+        # '/image_raw' for backwards compatibility with nodes expecting that
+        # topic.
+        self.declare_parameter('mirror_webcam_to_image_raw', False)
+        self.mirror_webcam = self.get_parameter('mirror_webcam_to_image_raw').value
+
+        try:
+            self.webcam_pub = self.create_publisher(Image, '/webcam/image_raw', sensor_qos)
+        except Exception:
+            self.webcam_pub = None
+
+        # Optional mirror publisher to '/image_raw' if requested
+        try:
+            if self.mirror_webcam:
+                self.webcam_mirror_pub = self.create_publisher(Image, '/image_raw', sensor_qos)
+            else:
+                self.webcam_mirror_pub = None
+        except Exception:
+            self.webcam_mirror_pub = None
         
         # State
         self.current_flight_data = {}
@@ -135,6 +159,27 @@ class TelloControlNode(Node):
             self.signals.image_signal.emit(cv_image)
         except Exception as e:
             self.get_logger().error(f'Error converting image: {e}')
+
+    def publish_webcam_frame(self, cv_image):
+        """Publish a cv2 BGR image as a ROS Image message on `/image_raw`.
+
+        This allows external gesture recognition nodes to process the laptop
+        webcam frames as if they were the drone feed.
+        """
+        if self.webcam_pub is None:
+            return
+        try:
+            ros_img = self.bridge.cv2_to_imgmsg(cv_image, encoding='bgr8')
+            # Publish to dedicated webcam topic
+            self.webcam_pub.publish(ros_img)
+            # Mirror to '/image_raw' only if explicitly enabled
+            try:
+                if getattr(self, 'webcam_mirror_pub', None) is not None:
+                    self.webcam_mirror_pub.publish(ros_img)
+            except Exception:
+                pass
+        except Exception as e:
+            self.get_logger().error(f'Error publishing webcam frame: {e}')
     
     def flight_data_callback(self, msg):
         """Callback untuk flight data"""
@@ -229,6 +274,15 @@ class VideoWidget(QWidget):
         self.video_label.setAlignment(Qt.AlignCenter)
         self.video_label.setText("Waiting for video stream...")
         
+        # Caption label (overlayed on top of video_label)
+        self.caption_label = QLabel(self.video_label)
+        self.caption_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.caption_label.setStyleSheet("background-color: rgba(0,0,0,120); color: white; padding: 4px; border-radius: 4px;")
+        self.caption_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+        self.caption_label.setText("")
+        self.caption_label.move(0, 4)
+        self.caption_label.resize(self.video_label.width(), 28)
+
         layout.addWidget(self.video_label)
         
         self.setLayout(layout)
@@ -244,16 +298,28 @@ class VideoWidget(QWidget):
         self.overlay_telemetry = {}
         # Keep last pixmap to allow repainting overlay when telemetry updates
         self._last_pixmap = None
+        # Whether this widget should draw telemetry overlay when frames are present
+        self.overlay_enabled = True
+        # Has received recent frames (used to hide overlay/keep black when no drone)
+        self.has_frame = False
+        # Number of consecutive FPS ticks with no frames received
+        self._no_frame_count = 0
         # Draw initial overlay on an empty background so the text is visible
         try:
             self.update_overlay_telemetry({})
         except Exception:
             pass
+
+        # Whether overlay should be shown even when no frames are present
+        self.show_overlay_always = False
     
     def update_image(self, cv_image):
         """Update displayed image"""
         try:
             self.frame_count += 1
+            # Reset no-frame counter and mark we have a frame
+            self._no_frame_count = 0
+            self.has_frame = True
             
             # Convert to RGB
             rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
@@ -273,7 +339,11 @@ class VideoWidget(QWidget):
 
             # Store last pixmap and draw overlay telemetry on it
             self._last_pixmap = scaled_pixmap
-            overlayed = self._draw_overlay_on(scaled_pixmap)
+            # Draw overlay only if enabled for this widget.
+            if self.overlay_enabled:
+                overlayed = self._draw_overlay_on(scaled_pixmap)
+            else:
+                overlayed = scaled_pixmap
             self.video_label.setPixmap(overlayed)
             
         except Exception as e:
@@ -283,22 +353,47 @@ class VideoWidget(QWidget):
         """Update FPS counter"""
         self.current_fps = self.frame_count
         self.frame_count = 0
-        # If overlay exists, refresh it to show updated FPS
+        # Track consecutive empty ticks to decide when to clear last frame
+        if self.frame_count == 0:
+            self._no_frame_count += 1
+        else:
+            self._no_frame_count = 0
+
+        # If we've seen no frames for two seconds (two ticks), consider there
+        # to be no active feed and clear last pixmap so the widget shows black.
+        if self._no_frame_count >= 2:
+            self.has_frame = False
+            self._last_pixmap = None
+            blank = self._make_blank_pixmap()
+            self.video_label.setPixmap(blank)
+            return
+
+        # If we have a last pixmap, refresh overlay/FPs (respect overlay flag)
         if self._last_pixmap is not None:
-            overlayed = self._draw_overlay_on(self._last_pixmap)
+            if self.overlay_enabled:
+                overlayed = self._draw_overlay_on(self._last_pixmap)
+            else:
+                overlayed = self._last_pixmap
             self.video_label.setPixmap(overlayed)
         else:
-            # No video received yet: draw on a blank pixmap of the label size
             blank = self._make_blank_pixmap()
-            overlayed = self._draw_overlay_on(blank)
-            self.video_label.setPixmap(overlayed)
+            self.video_label.setPixmap(blank)
 
     def update_overlay_telemetry(self, flight_data: dict):
         """Update the telemetry dict used for on-screen overlay and repaint if possible."""
         try:
             self.overlay_telemetry = flight_data or {}
-            # Refresh overlay if we have a last pixmap, otherwise draw on
-            # a blank pixmap so overlay is visible even with no video.
+            # Only draw overlay when enabled. If we don't have a recent frame
+            # we will still draw the overlay when `show_overlay_always` is True
+            # (used for the drone pane so telemetry is visible even when the
+            # drone is disconnected).
+            if not self.overlay_enabled or (not self.has_frame and not self.show_overlay_always):
+                # If no last pixmap, ensure the widget shows a blank background
+                if self._last_pixmap is None:
+                    blank = self._make_blank_pixmap()
+                    self.video_label.setPixmap(blank)
+                return
+
             if self._last_pixmap is not None:
                 overlayed = self._draw_overlay_on(self._last_pixmap)
                 self.video_label.setPixmap(overlayed)
@@ -457,6 +552,77 @@ class VideoWidget(QWidget):
         except Exception as e:
             print(f"Error creating blank pixmap: {e}")
             return QPixmap(640, 480)
+
+    def set_overlay_enabled(self, enabled: bool):
+        """Enable or disable telemetry overlay drawing for this widget."""
+        self.overlay_enabled = bool(enabled)
+
+    def set_show_overlay_always(self, enabled: bool):
+        """When True, overlay is drawn even if no video frames have been received."""
+        self.show_overlay_always = bool(enabled)
+
+    def set_caption(self, text: str):
+        """Set the small caption label shown over the video."""
+        try:
+            self.caption_label.setText(text)
+            # Resize caption to match video width
+            self.caption_label.resize(self.video_label.width(), 28)
+        except Exception:
+            pass
+
+
+class WebcamThread(QThread):
+    """Thread to capture webcam frames with OpenCV and emit them via signal.
+
+    It will also optionally publish frames into ROS via the provided node so
+    external gesture nodes can process the laptop camera feed.
+    """
+    def __init__(self, signal_emitter: SignalEmitter, ros_node: TelloControlNode = None, device=0):
+        super().__init__()
+        self.signals = signal_emitter
+        self.ros_node = ros_node
+        self.device = device
+        self.running = True
+
+    def run(self):
+        try:
+            cap = cv2.VideoCapture(self.device)
+        except Exception:
+            cap = None
+
+        if cap is None or not cap.isOpened():
+            # Try device 0 fallback failure handled silently
+            return
+
+        while self.running:
+            try:
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    self.msleep(30)
+                    continue
+
+                # Emit to GUI
+                self.signals.webcam_image_signal.emit(frame)
+
+                # Also publish into ROS topic for gesture recognition if available
+                try:
+                    if self.ros_node is not None:
+                        self.ros_node.publish_webcam_frame(frame)
+                except Exception:
+                    pass
+
+                # Small sleep to avoid pegging CPU
+                self.msleep(30)
+            except Exception:
+                self.msleep(100)
+
+        try:
+            cap.release()
+        except Exception:
+            pass
+
+    def stop(self):
+        self.running = False
 
 
 class TelemetryWidget(QWidget):
@@ -972,6 +1138,8 @@ class MainWindow(QMainWindow):
         
         # Connect signals from signal emitter
         self.signal_emitter.image_signal.connect(self.update_video)
+        # Webcam frames (local laptop camera)
+        self.signal_emitter.webcam_image_signal.connect(self.update_webcam)
         self.signal_emitter.flight_data_signal.connect(self.update_telemetry)
         self.signal_emitter.gesture_status_signal.connect(self.update_gesture)
         
@@ -987,12 +1155,28 @@ class MainWindow(QMainWindow):
         # Left panel - Video and telemetry
         left_panel = QVBoxLayout()
         
-        self.video_widget = VideoWidget()
-        left_panel.addWidget(self.video_widget, stretch=3)
-        
-        # Keep an internal telemetry widget for legacy updates but do not add it
-        # to the layout — telemetry will be shown as an overlay on the video.
+        # Create two video widgets: drone footage (left) and webcam (right).
+        # The webcam feed will carry telemetry overlay and drive gesture functionality.
+        video_pair = QHBoxLayout()
+        self.drone_video_widget = VideoWidget()
+        self.webcam_video_widget = VideoWidget()
+        video_pair.addWidget(self.drone_video_widget)
+        video_pair.addWidget(self.webcam_video_widget)
+        left_panel.addLayout(video_pair, stretch=3)
+
+        # Keep an internal telemetry widget for legacy updates; telemetry
+        # overlay will be painted on the drone widget (left) only.
         self.telemetry_widget = TelemetryWidget()
+
+        # Configure captions and overlay behavior: drone left receives
+        # telemetry overlay, webcam right does not.
+        try:
+            self.drone_video_widget.set_caption("Drone")
+            self.drone_video_widget.set_overlay_enabled(True)
+            self.webcam_video_widget.set_caption("Webcam (Gesture)")
+            self.webcam_video_widget.set_overlay_enabled(False)
+        except Exception:
+            pass
         
         # Right panel - Controls
         right_panel = QWidget()
@@ -1021,20 +1205,50 @@ class MainWindow(QMainWindow):
         
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
+        # Start webcam capture thread so laptop camera is available immediately.
+        try:
+            self.webcam_thread = WebcamThread(self.signal_emitter, self.ros_node, device=0)
+            self.webcam_thread.start()
+        except Exception:
+            self.webcam_thread = None
     
     def update_video(self, cv_image):
         """Update video display"""
-        self.video_widget.update_image(cv_image)
+        # Drone video stream -> drone video widget (pure footage)
+        try:
+            self.drone_video_widget.update_image(cv_image)
+        except Exception:
+            pass
+
+    def update_webcam(self, cv_image):
+        """Update webcam video display and publish frames for gesture processing."""
+        try:
+            # Draw frames in webcam widget
+            self.webcam_video_widget.update_image(cv_image)
+
+            # Publish to ROS so external gesture nodes receive webcam frames
+            try:
+                self.ros_node.publish_webcam_frame(cv_image)
+            except Exception:
+                pass
+        except Exception:
+            pass
     
     def update_telemetry(self, flight_data):
         """Update telemetry display"""
         # Update the hidden telemetry widget (keeps internal state) and the
-        # video overlay in the top-left of the video display.
+        # video overlay in the top-left of the drone (left) display.
         try:
             self.telemetry_widget.update_telemetry(flight_data)
         except Exception:
             pass
-        self.video_widget.update_overlay_telemetry(flight_data)
+        try:
+            # Overlay telemetry on the drone feed (left pane). The webcam
+            # feed (right pane) will be used for gesture detection and
+            # should remain unmodified by telemetry overlay.
+            self.drone_video_widget.update_overlay_telemetry(flight_data)
+        except Exception:
+            pass
     
     def update_gesture(self, gesture):
         """Update gesture status"""
@@ -1067,7 +1281,14 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Handle window close"""
         print("Shutting down...")
-        
+        # Stop webcam thread first
+        try:
+            if getattr(self, 'webcam_thread', None) is not None:
+                self.webcam_thread.stop()
+                self.webcam_thread.wait()
+        except Exception:
+            pass
+
         # Stop ROS thread
         self.ros_thread.stop()
         self.ros_thread.wait()
