@@ -31,7 +31,7 @@ class YOLODetectorNode(Node):
         self.declare_parameter('model_name', 'yolov8n')
         self.declare_parameter('confidence_threshold', 0.5)
         self.declare_parameter('device', 'cpu')
-        self.declare_parameter('target_classes', [])  # Empty = all classes
+        self.declare_parameter('target_classes', ['all'])
         self.declare_parameter('image_topic', '/image_raw')
         self.declare_parameter('publish_annotated', True)
 

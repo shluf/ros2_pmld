@@ -102,6 +102,12 @@ class GestureController(Node):
             qos_reliable
         )
         
+        self.annotated_pub = self.create_publisher(
+            Image,
+            '/gesture/annotated',
+            qos_reliable
+        )
+        
         self.safety_status_pub = self.create_publisher(
             Bool,
             '/gesture_recognition/safety_status',
@@ -328,7 +334,15 @@ class GestureController(Node):
                 return
             
         # Get gesture from recognition system
-        hand_sign, finger_gesture, hand_position = self.gesture_recognizer.process()
+        hand_sign, finger_gesture, hand_position, annotated_img = self.gesture_recognizer.process(return_image=True)
+        
+        # Publish annotated image
+        if annotated_img is not None:
+            try:
+                msg = self.bridge.cv2_to_imgmsg(annotated_img, 'bgr8')
+                self.annotated_pub.publish(msg)
+            except Exception as e:
+                self.get_logger().warn(f'Error publishing annotated image: {e}')
         
         # If no gesture detected, immediately send hover (stop movement) while drone is flying.
         # Keep sending hover each cycle until gesture returns.

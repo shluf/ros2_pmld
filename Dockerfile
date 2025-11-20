@@ -33,6 +33,10 @@ RUN apt-get update && apt-get install -y \
     iproute2 \
     iputils-ping \
     net-tools \
+    libasio-dev \
+    # Gazebo dependencies
+    ros-humble-gazebo-ros-pkgs \
+    libgazebo-dev \
     # ROS 2 RMW implementation
     ros-humble-rmw-cyclonedds-cpp \
     # Development utilities
@@ -55,17 +59,18 @@ WORKDIR ${WORKSPACE}
 RUN pip3 install --no-cache-dir \
     # YOLO detection
     ultralytics==8.0.196 \
+    tflite-runtime==2.12.0 \
     # ArUco marker detection (opencv-contrib includes aruco)
     opencv-contrib-python==4.8.1.78 \
     # Hand gesture recognition
     mediapipe==0.10.8 \
     # Additional utilities
-    numpy==1.24.3 \
-    scipy==1.11.3 \
-    pillow==10.0.1 \
-    pyyaml \
+    # numpy==1.24.3 \
+    # scipy==1.11.3 \
+    # pillow==10.0.1 \
+    # pyyaml \
     # For debugging and development
-    ipython
+    # ipython
 
 # Download YOLO models (for faster first-run)
 RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt'); YOLO('yolov8s.pt')" || true
