@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ============================================================================
   # Main ROS 2 Humble service for drone control system
@@ -8,7 +6,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: runtime  # Use 'dev' for development image
+      target: runtime
       args:
         - ROS_DISTRO=humble
     image: ros2_pmld:humble
@@ -23,7 +21,9 @@ services:
     
     # Environment variables
     environment:
-      - DISPLAY=${DISPLAY}  # For GUI applications (rviz2, rqt)
+      - QT_X11_NO_MITSHM=1
+      - DISPLAY=host.docker.internal:0.0 # Host display for GUI apps on Mac/Windows
+      # - DISPLAY=${DISPLAY}  # Local display for GUI apps
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - TELLO_IP=192.168.10.1  # Default Tello drone IP
@@ -74,7 +74,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: dev  # Development stage with extra tools
+      target: dev 
     image: ros2_pmld:dev
     container_name: ros2_drone_dev
     hostname: drone-dev
@@ -84,7 +84,9 @@ services:
     privileged: true
     
     environment:
-      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - DISPLAY=host.docker.internal:0.0 # Host display for GUI apps on Mac/Windows
+      # - DISPLAY=${DISPLAY}  # Local display for GUI apps
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - TELLO_IP=192.168.10.1
@@ -124,7 +126,9 @@ services:
     network_mode: host
     
     environment:
-      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - DISPLAY=host.docker.internal:0.0 # Host display for GUI apps on Mac/Windows
+      # - DISPLAY=${DISPLAY}  # Local display for GUI apps
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - QT_X11_NO_MITSHM=1

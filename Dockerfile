@@ -1,6 +1,3 @@
-# Multi-stage Dockerfile for ROS 2 Humble Multi-Mode Drone Control System
-# Base: Ubuntu 22.04 with ROS 2 Humble
-
 # ============================================================================
 # Stage 1: Base ROS 2 Humble with system dependencies
 # ============================================================================
@@ -23,7 +20,6 @@ RUN apt-get update && apt-get install -y \
     curl \
     # OpenCV and vision dependencies
     libopencv-dev \
-    python3-opencv \
     # GUI and display support
     x11-apps \
     mesa-utils \
@@ -56,21 +52,23 @@ FROM base AS dependencies
 WORKDIR ${WORKSPACE}
 
 # Install Python packages for perception and control
-RUN pip3 install --no-cache-dir \
-    # YOLO detection
-    ultralytics==8.0.196 \
-    tflite-runtime==2.12.0 \
-    # ArUco marker detection (opencv-contrib includes aruco)
-    opencv-contrib-python==4.8.1.78 \
-    # Hand gesture recognition
-    mediapipe==0.10.8 \
-    # Additional utilities
-    # numpy==1.24.3 \
-    # scipy==1.11.3 \
-    # pillow==10.0.1 \
-    # pyyaml \
-    # For debugging and development
-    # ipython
+RUN pip3 install --no-cache-dir --upgrade pip
+RUN pip3 install --no-cache-dir --default-timeout=1000 numpy==1.24.3
+
+# Install CPU-only PyTorch
+RUN pip3 install --no-cache-dir --ignore-installed torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+
+# Install Ultralytics (YOLO)
+RUN pip3 install --no-cache-dir --default-timeout=1000 ultralytics==8.0.196
+
+# Install TFLite Runtime
+RUN pip3 install --no-cache-dir --default-timeout=1000 tflite-runtime==2.14.0
+
+# Install OpenCV Contrib (File Paling Besar - sering timeout disini)
+RUN pip3 install --no-cache-dir --default-timeout=1000 opencv-contrib-python==4.8.1.78
+
+# Install MediaPipe
+RUN pip3 install --no-cache-dir --default-timeout=1000 mediapipe==0.10.8
 
 # Download YOLO models (for faster first-run)
 RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt'); YOLO('yolov8s.pt')" || true

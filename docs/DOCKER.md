@@ -1,4 +1,4 @@
-# 🐳 Docker Integration Guide - ROS 2 Multi-Mode Drone Control System
+# Docker Integration Guide - ROS 2 Multi-Mode Drone Control System
 
 This guide provides comprehensive instructions for running the ROS 2 Multi-Mode Drone Control System using Docker containers.
 
@@ -607,19 +607,5 @@ jobs:
 
 ---
 
-## 🆘 Getting Help
-
-If you encounter issues:
-
-1. Check logs: `./docker/docker.sh logs`
-2. Review this troubleshooting guide
-3. Check QUICKSTART.md and ARCHITECTURE.md
-4. Open an issue with:
-   - Docker version: `docker --version`
-   - OS and version
-   - Complete error message
-   - Steps to reproduce
-
----
 
 **Happy Drone Flying! 🚁**

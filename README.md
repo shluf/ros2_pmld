@@ -128,7 +128,7 @@ source install/setup.bash
 
 ## 🎮 Quick Start
 
-### 🆕 Multi-Mode Control System
+### Multi-Mode Control System
 
 ```bash
 # Launch full multi-mode system
@@ -149,11 +149,11 @@ ros2 launch tello_perception perception.launch.py
 ros2 launch tello_control control_system.launch.py
 ```
 
-**📖 For complete usage guide, see [QUICKSTART.md](QUICKSTART.md)**
+** For complete usage guide, see [QUICKSTART.md](docs/QUICKSTART.md)**
 
 ---
 
-### 🎯 Original Menu System
+### Original Menu System
 
 #### Method 1: Interactive Menu
 ```bash
@@ -235,7 +235,7 @@ ros2 launch tello_control_gui tello_gui_launch.py \
     simulation:=false
 ```
 
-## 📦 Package Structure
+## Package Structure
 
 ### New Multi-Mode Control Packages
 
@@ -266,16 +266,16 @@ ros2 launch tello_control_gui tello_gui_launch.py \
 
 ---
 
-## 📖 Documentation
+## Documentation
 
-- **[DOCKER.md](DOCKER.md)** - Complete Docker integration guide
-- **[QUICKSTART.md](QUICKSTART.md)** - Quick start and usage guide
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design
-- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Implementation details
+- **[DOCKER.md](docs/DOCKER.md)** - Complete Docker integration guide
+- **[QUICKSTART.md](docs/QUICKSTART.md)** - Quick start and usage guide
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System architecture and design
+- **[IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md)** - Implementation details
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
 ### Multi-Mode System Configuration
 
@@ -303,7 +303,7 @@ tracking_controller:
 
 ---
 
-## 🎯 Gesture Controls
+## Gesture Controls
 
 Control the drone with hand gestures!
 
@@ -313,15 +313,6 @@ Control the drone with hand gestures!
 | 👆 **Pointer** (1 finger) | Rotate | Drone rotates based on hand position |
 | ✊ **Closed Fist** | Move Backward | Drone moves backward |
 | 👌 **OK Sign** | Land | Drone lands safely |
-
-
-### Gesture Modes
-
-| Mode | Safety | Hold Time | Debug | Best For |
-|------|--------|-----------|-------|----------|
-| **Gazebo Debug** | ✗ | 0.5s | ✓ | Fast testing & development |
-| **Gazebo Production** | ✓ | 1.0s | ✗ | Pre-flight testing |
-| **Real Drone** | ✓ | 1.0s | ✗ | Actual flying |
 
 ## Keyboard Controls
 

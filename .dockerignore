@@ -59,7 +59,6 @@ docker-compose*.yml
 
 # Scripts (will be copied separately)
 *.ps1
-scripts/*.sh
 
 # Model files (downloaded during build)
 *.pt

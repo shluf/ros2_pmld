@@ -1,6 +1,4 @@
 #!/bin/bash
-# ROS 2 Entrypoint script for Docker container
-
 set -e
 
 # Source ROS 2 Humble

@@ -134,8 +134,6 @@ class GestureRecognition:
         return debug_image
 
     # ---------- helpers ----------
-
-    # ---------- helpers ----------
     def _calc_landmark_list(self, image, landmarks):
         image_width, image_height = image.shape[1], image.shape[0]
         landmark_point = []
