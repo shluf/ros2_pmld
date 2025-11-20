@@ -77,7 +77,7 @@ class GestureController(Node):
         if self.use_drone_camera:
             self.image_sub = self.create_subscription(
                 Image,
-                'image_raw', 
+                '/webcam/image_raw', 
                 self.image_callback,
                 qos_best_effort
             )

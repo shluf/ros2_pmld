@@ -140,7 +140,7 @@ class TelloControlNode(Node):
         # Optional mirror publisher to '/image_raw' if requested
         try:
             if self.mirror_webcam:
-                self.webcam_mirror_pub = self.create_publisher(Image, '/image_raw', sensor_qos)
+                self.webcam_mirror_pub = self.create_publisher(Image, '/webcam/image_raw/mirror', sensor_qos)
             else:
                 self.webcam_mirror_pub = None
         except Exception:
