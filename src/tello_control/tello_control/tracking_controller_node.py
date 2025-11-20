@@ -8,6 +8,9 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from geometry_msgs.msg import Twist
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+import cv2
 from tello_interfaces.msg import DetectionArray, ControlMode, ObjectDistanceArray
 import time
 
@@ -136,16 +139,26 @@ class TrackingControllerNode(Node):
         self.frame_center_x = self.frame_width / 2.0
         self.frame_center_y = self.frame_height / 2.0
 
+        # CV Bridge
+        self.bridge = CvBridge()
+
         # State
         self.current_mode = None
         self.tracking_enabled = False
         self.target_detected = False
         self.latest_detections = None
         self.latest_distances = None
+        self.latest_image = None
 
         # QoS profiles
         qos_reliable = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        
+        qos_sensor = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
             depth=10
         )
@@ -156,6 +169,13 @@ class TrackingControllerNode(Node):
             '/detections',
             self.detection_callback,
             qos_reliable
+        )
+        
+        self.image_sub = self.create_subscription(
+            Image,
+            '/image_raw',
+            self.image_callback,
+            qos_sensor
         )
 
         self.mode_sub = self.create_subscription(
@@ -177,6 +197,12 @@ class TrackingControllerNode(Node):
             Twist,
             '/tracking/cmd_vel',
             qos_reliable
+        )
+        
+        self.annotated_pub = self.create_publisher(
+            Image,
+            '/tracking/annotated',
+            qos_sensor
         )
 
         # Timer for control loop
@@ -203,6 +229,10 @@ class TrackingControllerNode(Node):
     def detection_callback(self, msg: DetectionArray):
         """Store latest detections."""
         self.latest_detections = msg
+
+    def image_callback(self, msg: Image):
+        """Store latest image."""
+        self.latest_image = msg
 
     def distance_callback(self, msg: ObjectDistanceArray):
         """Store latest distance measurements."""
@@ -269,6 +299,46 @@ class TrackingControllerNode(Node):
         cmd_vel.angular.z = cmd_yaw
 
         self.cmd_vel_pub.publish(cmd_vel)
+        
+        # Visualization
+        if self.latest_image is not None:
+            try:
+                annotated_img = self.bridge.imgmsg_to_cv2(self.latest_image, 'bgr8')
+                
+                # Draw frame center
+                cx, cy = int(self.frame_center_x), int(self.frame_center_y)
+                cv2.line(annotated_img, (cx-20, cy), (cx+20, cy), (0, 255, 0), 1)
+                cv2.line(annotated_img, (cx, cy-20), (cx, cy+20), (0, 255, 0), 1)
+                
+                # Draw target center
+                tx, ty = int(target.center_x), int(target.center_y)
+                cv2.circle(annotated_img, (tx, ty), 5, (0, 0, 255), -1)
+                
+                # Draw error line
+                cv2.line(annotated_img, (cx, cy), (tx, ty), (0, 255, 255), 2)
+                
+                # Draw bounding box
+                x, y = int(target.x), int(target.y)
+                w, h = int(target.width), int(target.height)
+                cv2.rectangle(annotated_img, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                
+                # Draw command info
+                info_text = f"CMD: x={cmd_fb:.2f} y={cmd_lr:.2f} z={cmd_ud:.2f}"
+                cv2.putText(annotated_img, info_text, (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+                # Draw target info
+                target_text = f"Target: {target.class_name} ({target.confidence:.2f})"
+                cv2.putText(annotated_img, target_text, (x, y-10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                
+                # Publish annotated image
+                msg = self.bridge.cv2_to_imgmsg(annotated_img, 'bgr8')
+                msg.header = self.latest_image.header
+                self.annotated_pub.publish(msg)
+                
+            except Exception as e:
+                self.get_logger().warn(f'Visualization error: {e}')
 
         if not self.target_detected:
             self.get_logger().info(f'Tracking: {target.class_name}')

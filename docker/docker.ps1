@@ -140,14 +140,9 @@ function Remove-All {
 function Rebuild-Workspace {
     Write-Info "Rebuilding ROS 2 workspace inside container"
     
-    $rebuildScript = @"
-cd /root/ros2_ws
-rm -rf build install log
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install
-"@
+    $cmd = "source /opt/ros/humble/setup.bash && cd /root/ros2_ws && rm -rf build install log && colcon build --symlink-install"
     
-    docker exec -it $ContainerName bash -c $rebuildScript
+    docker exec -it $ContainerName bash -c $cmd
     
     if ($LASTEXITCODE -eq 0) {
         Write-Success "Workspace rebuilt!"
@@ -160,26 +155,18 @@ colcon build --symlink-install
 function Invoke-Tests {
     Write-Info "Running tests inside container"
     
-    $testScript = @"
-cd /root/ros2_ws
-source install/setup.bash
-colcon test
-colcon test-result --verbose
-"@
+    $cmd = "cd /root/ros2_ws && source install/setup.bash && colcon test && colcon test-result --verbose"
     
-    docker exec -it $ContainerName bash -c $testScript
+    docker exec -it $ContainerName bash -c $cmd
 }
 
 # Launch system
 function Start-Launch {
     Write-Info "Launching full drone control system"
     
-    $launchScript = @"
-source /root/ros2_ws/install/setup.bash
-ros2 launch tello_control full_system.launch.py
-"@
+    $cmd = "source /root/ros2_ws/install/setup.bash && ros2 launch tello_control full_system.launch.py"
     
-    docker exec -it $ContainerName bash -c $launchScript
+    docker exec -it $ContainerName bash -c $cmd
 }
 
 # Show help

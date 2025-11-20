@@ -59,9 +59,11 @@ class GestureRecognition:
         with self.frame_lock:
             self.current_frame = cv_image
 
-    def process(self):
+    def process(self, return_image=False):
         with self.frame_lock:
             if self.current_frame is None:
+                if return_image:
+                    return None, None, None, None
                 return None, None, None
             image = self.current_frame.copy()
 
@@ -93,9 +95,45 @@ class GestureRecognition:
         else:
             self.point_history.clear()
 
-        if self.debug:
-            self._debug_display(image)
+        annotated_image = None
+        if self.debug or return_image:
+            annotated_image = self._debug_display(image, results)
+            
+        if return_image:
+            return self.current_hand_sign, self.current_finger_gesture, self.current_hand_position, annotated_image
+            
         return self.current_hand_sign, self.current_finger_gesture, self.current_hand_position
+
+    def _debug_display(self, image, results=None):
+        # If results not passed, we can't draw landmarks easily unless we stored them
+        # But for now let's assume we just want to draw what we have
+        
+        # Note: _debug_display in original code probably drew on 'image' in place or returned it
+        # Let's make sure we draw landmarks if available
+        
+        debug_image = image.copy()
+        
+        if results and results.multi_hand_landmarks:
+            for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
+                # Draw landmarks
+                mp.solutions.drawing_utils.draw_landmarks(
+                    debug_image,
+                    hand_landmarks,
+                    self.mp_hands.HAND_CONNECTIONS
+                )
+                
+                # Draw info text
+                landmark_list = self._calc_landmark_list(debug_image, hand_landmarks)
+                x, y = landmark_list[0]
+                
+                # Hand sign label
+                # (Assuming we have labels loaded or just ID)
+                cv2.putText(debug_image, f"Sign: {self.current_hand_sign}", (x, y-10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
+                
+        return debug_image
+
+    # ---------- helpers ----------
 
     # ---------- helpers ----------
     def _calc_landmark_list(self, image, landmarks):

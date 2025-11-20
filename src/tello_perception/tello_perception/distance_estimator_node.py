@@ -9,6 +9,9 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from geometry_msgs.msg import PoseArray
+from sensor_msgs.msg import Image, CameraInfo
+from cv_bridge import CvBridge
+import cv2
 import numpy as np
 import math
 
@@ -30,9 +33,22 @@ class DistanceEstimatorNode(Node):
         self.max_distance = self.get_parameter('max_distance_meters').value
         self.min_confidence = self.get_parameter('min_confidence').value
 
+        # CV Bridge
+        self.bridge = CvBridge()
+
+        # Camera calibration (defaults)
+        self.camera_matrix = np.array([[921.0, 0.0, 480.0], [0.0, 921.0, 360.0], [0.0, 0.0, 1.0]])
+        self.dist_coeffs = np.zeros(5)
+
         # QoS profiles
         qos_reliable = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        
+        qos_sensor = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
             depth=10
         )
@@ -51,6 +67,20 @@ class DistanceEstimatorNode(Node):
             self.aruco_callback,
             qos_reliable
         )
+        
+        self.image_sub = self.create_subscription(
+            Image,
+            '/image_raw',
+            self.image_callback,
+            qos_sensor
+        )
+        
+        self.camera_info_sub = self.create_subscription(
+            CameraInfo,
+            '/camera_info',
+            self.camera_info_callback,
+            qos_sensor
+        )
 
         # Publishers
         self.distance_pub = self.create_publisher(
@@ -58,15 +88,31 @@ class DistanceEstimatorNode(Node):
             '/object_distances',
             qos_reliable
         )
+        
+        self.annotated_pub = self.create_publisher(
+            Image,
+            '/distance/annotated',
+            qos_sensor
+        )
 
         # State
         self.latest_detections = None
         self.latest_aruco_poses = None
+        self.latest_image = None
         self.aruco_marker_corners = []  # Store pixel positions of markers
 
         self.get_logger().info('Distance Estimator Node initialized')
         self.get_logger().info(f'Marker size: {self.marker_size}m')
         self.get_logger().info(f'Max distance: {self.max_distance}m')
+
+    def image_callback(self, msg: Image):
+        """Store latest image for visualization."""
+        self.latest_image = msg
+
+    def camera_info_callback(self, msg: CameraInfo):
+        """Update camera calibration."""
+        self.camera_matrix = np.array(msg.k).reshape(3, 3)
+        self.dist_coeffs = np.array(msg.d)
 
     def aruco_callback(self, msg: PoseArray):
         """Store latest ArUco marker poses."""
@@ -119,6 +165,14 @@ class DistanceEstimatorNode(Node):
         # Create distance array message
         distance_array = ObjectDistanceArray()
         distance_array.header = self.latest_detections.header
+        
+        # Prepare visualization if image is available
+        annotated_img = None
+        if self.latest_image is not None:
+            try:
+                annotated_img = self.bridge.imgmsg_to_cv2(self.latest_image, 'bgr8')
+            except Exception as e:
+                self.get_logger().warn(f'CV Bridge error: {e}')
 
         # For each detected object, calculate distance to nearest marker
         for obj_idx, detection in enumerate(self.latest_detections.detections):
@@ -135,19 +189,26 @@ class DistanceEstimatorNode(Node):
                 # For simplicity, we'll use the pose z-distance for scale
                 # In practice, you'd project 3D pose back to image plane
                 
-                # Simplified: assume marker is at center of detection if close
-                # Better approach: store marker corners during detection
-                marker_z = marker_pos['z']  # Distance from camera in meters
-                
-                # Calculate pixel-to-meter scale at this distance
-                # Using pinhole camera model approximation
-                # This is simplified - marker pixel position needed for accuracy
-                pixels_per_meter = self.estimate_pixels_per_meter(marker_z)
-
-                # For now, use simple Euclidean distance in pixels
-                # TODO: Get actual marker pixel positions from ArUco detector
-                # Placeholder: assume markers reported their pixel centers
-                # (This requires modifying ArUco detector to publish pixel positions)
+                # Project 3D point to 2D
+                try:
+                    point_3d = np.array([[marker_pos['x'], marker_pos['y'], marker_pos['z']]])
+                    point_2d, _ = cv2.projectPoints(
+                        point_3d, 
+                        np.zeros(3), np.zeros(3), # Identity rotation/translation (pose is already in camera frame)
+                        self.camera_matrix, 
+                        self.dist_coeffs
+                    )
+                    marker_px_x = point_2d[0][0][0]
+                    marker_px_y = point_2d[0][0][1]
+                    
+                    # Update marker position with projected pixels
+                    marker_pos['px_x'] = marker_px_x
+                    marker_pos['px_y'] = marker_px_y
+                    
+                except Exception as e:
+                    # Fallback if projection fails
+                    marker_pos['px_x'] = 0
+                    marker_pos['px_y'] = 0
                 
             # Since we need pixel positions of markers, let's use a simplified approach:
             # Calculate distance using the first (closest) marker's scale
@@ -161,10 +222,20 @@ class DistanceEstimatorNode(Node):
                 # pixels_per_meter depends on focal length and distance
                 pixels_per_meter = self.estimate_pixels_per_meter(marker_z)
                 
-                # For distance estimation between objects, we need marker pixel position
-                # Since ArUco detector doesn't currently publish pixel coords,
-                # we'll estimate based on bounding box centers
-                # NOTE: This is a limitation - should enhance ArUco detector
+                # Use projected pixel coordinates if available
+                marker_px_x = marker.get('px_x', 0.0)
+                marker_px_y = marker.get('px_y', 0.0)
+                
+                # Calculate distance in pixels
+                dist_px = self.calculate_pixel_distance(
+                    obj_center_x, obj_center_y, 
+                    marker_px_x, marker_px_y
+                )
+                
+                # Calculate distance in meters
+                dist_m = 0.0
+                if pixels_per_meter > 0:
+                    dist_m = dist_px / pixels_per_meter
                 
                 # Create distance measurement
                 obj_distance = ObjectDistance()
@@ -174,24 +245,46 @@ class DistanceEstimatorNode(Node):
                 obj_distance.object_center_y = obj_center_y
                 
                 obj_distance.marker_id = 0  # Using first marker
-                # Placeholder pixel positions (need actual marker pixels)
-                obj_distance.marker_center_x = 0.0
-                obj_distance.marker_center_y = 0.0
+                obj_distance.marker_center_x = float(marker_px_x)
+                obj_distance.marker_center_y = float(marker_px_y)
                 
-                # Distance estimation (placeholder - needs marker pixel coords)
-                obj_distance.distance_pixels = 0.0
-                obj_distance.distance_meters = 0.0
-                obj_distance.confidence = 0.5  # Low confidence due to missing pixel data
+                obj_distance.distance_pixels = dist_px
+                obj_distance.distance_meters = dist_m
+                obj_distance.confidence = 0.8
                 
                 distance_array.distances.append(obj_distance)
                 
-                self.get_logger().warn(
-                    'Distance estimation limited: ArUco pixel positions not available. '
-                    'Consider enhancing ArUco detector to publish pixel coordinates.'
-                )
+                # Visualization
+                if annotated_img is not None:
+                    # Draw line
+                    pt1 = (int(obj_center_x), int(obj_center_y))
+                    pt2 = (int(marker_px_x), int(marker_px_y))
+                    cv2.line(annotated_img, pt1, pt2, (0, 255, 255), 2)
+                    
+                    # Draw distance text
+                    mid_x = int((pt1[0] + pt2[0]) / 2)
+                    mid_y = int((pt1[1] + pt2[1]) / 2)
+                    text = f"{dist_m*100:.1f}cm"
+                    cv2.putText(annotated_img, text, (mid_x, mid_y), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                    
+                    # Draw object center
+                    cv2.circle(annotated_img, pt1, 5, (0, 0, 255), -1)
+                    # Draw marker center
+                    cv2.circle(annotated_img, pt2, 5, (0, 255, 0), -1)
 
         # Publish distances
         self.distance_pub.publish(distance_array)
+        
+        # Publish annotated image
+        if annotated_img is not None:
+            try:
+                msg = self.bridge.cv2_to_imgmsg(annotated_img, 'bgr8')
+                msg.header = self.latest_detections.header
+                self.annotated_pub.publish(msg)
+            except Exception as e:
+                self.get_logger().warn(f'Error publishing annotated image: {e}')
+                
         self.get_logger().debug(f'Published {len(distance_array.distances)} distance measurements')
 
     def estimate_pixels_per_meter(self, distance_meters):
