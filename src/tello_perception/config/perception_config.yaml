@@ -4,8 +4,8 @@
 yolo_detector:
   model_name: "yolov8n"  # yolov8n, yolov8s, yolov8m, yolov8l, yolov8x
   confidence_threshold: 0.5
-  device: "cpu"  # "cpu" or "cuda"
-  target_classes: ["person", "bottle", "cup"]  # Empty list = all classes
+  device: "cuda"  # "cpu" or "cuda"
+  target_classes: ["person"]  # Empty list = all classes
   publish_annotated: true
 
 # ArUco Detector Settings
