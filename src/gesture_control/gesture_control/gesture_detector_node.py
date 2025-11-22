@@ -48,11 +48,11 @@ class GestureDetectorNode(Node):
         if self.use_drone_camera:
             self.image_sub = self.create_subscription(
                 Image,
-                'image_raw', 
+                '/webcam/image_raw', 
                 self.image_callback,
                 qos_best_effort
             )
-            self.get_logger().info('Subscribed to image_raw')
+            self.get_logger().info('Subscribed to /webcam/image_raw')
         
         # Publishers
         self.gesture_pub = self.create_publisher(

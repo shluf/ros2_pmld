@@ -71,6 +71,20 @@ def generate_launch_description():
         name='joy_controller',
         output='screen'
     )
+    tello_control_gui_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('tello_control_gui'),
+                'launch',
+                'tello_gui_launch.py'
+            )
+        ),
+        launch_arguments={
+            'with_driver': 'false',
+            'with_gesture': 'false',
+            'simulation': 'false'
+        }.items()
+    )
 
     return LaunchDescription([
         drone_ip_arg,
@@ -79,5 +93,6 @@ def generate_launch_description():
         perception_launch,
         control_launch,
         joy_node,
-        joy_controller
+        joy_controller,
+        tello_control_gui_launch
     ])
