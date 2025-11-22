@@ -14,7 +14,7 @@ services:
     hostname: drone-control
     
     # Network configuration
-    network_mode: host  # Required for DDS discovery and Tello UDP communication
+    network_mode: "host"
     
     # Privileged mode for hardware access (camera, network)
     privileged: true
@@ -26,8 +26,9 @@ services:
       # - DISPLAY=${DISPLAY}  # Local display for GUI apps
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-      - TELLO_IP=192.168.10.1  # Default Tello drone IP
+      - TELLO_IP=192.168.10.1  # Direct Tello IP
       - PYTHONUNBUFFERED=1
+      - LIBGL_ALWAYS_INDIRECT=1  # For Mesa software rendering
     
     # Volume mounts
     volumes:
@@ -37,6 +38,8 @@ services:
       - ./config:/root/ros2_ws/config:rw
       # Launch files
       - ./launch:/root/ros2_ws/launch:rw
+      # Scripts
+      - ./scripts:/root/ros2_ws/scripts:rw
       # X11 socket for GUI
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # Shared memory for better DDS performance
@@ -80,7 +83,7 @@ services:
     hostname: drone-dev
     profiles: ["dev"]  # Only start with --profile dev
     
-    network_mode: host
+    network_mode: "host"
     privileged: true
     
     environment:

@@ -53,22 +53,31 @@ WORKDIR ${WORKSPACE}
 
 # Install Python packages for perception and control
 RUN pip3 install --no-cache-dir --upgrade pip
-RUN pip3 install --no-cache-dir --default-timeout=1000 numpy==1.24.3
 
-# Install CPU-only PyTorch
-RUN pip3 install --no-cache-dir --ignore-installed torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+# Install NumPy 1.x first (CRITICAL: Must stay <2.0 for OpenCV/cv_bridge compatibility)
+RUN pip3 install --no-cache-dir --default-timeout=1000 "numpy>=1.24,<2.0"
 
-# Install Ultralytics (YOLO)
+# Install CPU-only PyTorch (with --no-deps to prevent numpy upgrade)
+RUN pip3 install --no-cache-dir --no-deps torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+RUN pip3 install --no-cache-dir typing-extensions networkx jinja2 fsspec filelock
+
+# Install/upgrade sympy via pip (to avoid conflict with system sympy)
+RUN pip3 install --no-cache-dir --ignore-installed sympy
+
+# Install Ultralytics (YOLO) - careful with dependencies
 RUN pip3 install --no-cache-dir --default-timeout=1000 ultralytics==8.0.196
 
 # Install TFLite Runtime
 RUN pip3 install --no-cache-dir --default-timeout=1000 tflite-runtime==2.14.0
 
-# Install OpenCV Contrib (File Paling Besar - sering timeout disini)
+# Install OpenCV Contrib (requires numpy<2)
 RUN pip3 install --no-cache-dir --default-timeout=1000 opencv-contrib-python==4.8.1.78
 
-# Install MediaPipe
+# Install MediaPipe (requires numpy<2)
 RUN pip3 install --no-cache-dir --default-timeout=1000 mediapipe==0.10.8
+
+# Force reinstall numpy 1.x to ensure nothing upgraded it
+RUN pip3 install --no-cache-dir --force-reinstall "numpy>=1.24,<2.0"
 
 # Download YOLO models (for faster first-run)
 RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt'); YOLO('yolov8s.pt')" || true
@@ -100,7 +109,13 @@ RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
     tello_interfaces \
     tello_perception \
     tello_control \
-    gesture_control
+    gesture_control \
+    ros2_shared \
+    tello_driver \
+    tello_msgs \
+    tello_control_gui
+    # tello_description \
+    # tello_gazebo
 
 # ============================================================================
 # Stage 4: Runtime image (minimal)

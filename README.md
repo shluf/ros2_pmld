@@ -249,18 +249,21 @@ ros2 launch tello_control_gui tello_gui_launch.py \
   - `aruco_detector_node` - ArUco marker detection
   - `distance_estimator_node` - Pixel-to-metric distance estimation
 
-- **tello_control/** - Multi-mode control layer (NEW)
+- **tello_control/** - Multi-mode control layer (UPDATED)
   - `mode_manager_node` - Mode switching with graceful transitions
-  - `tracking_controller_node` - PID-based autonomous tracking
   - `control_arbitrator_node` - Command multiplexing
+  - **control_modes/** - Specific controllers:
+    - `tracking_controller_node` - PID-based autonomous tracking
+    - `gesture_control_node` - Gesture-based control logic
+    - `keyboard_controller` - Keyboard teleoperation
+    - `joy_controller_node` - Joystick control (Logitech Extreme 3D)
 
 ### Original Packages
 
-- **gesture_control/** - Hand gesture recognition and control (UPDATED)
-  - Now mode-aware, publishes to `/gesture/cmd_vel`
+- **gesture_control/** - Hand gesture recognition (UPDATED)
+  - `gesture_detector_node` - Detects gestures and publishes status (Perception only)
   
 - **tello_control_gui/** - PyQt5 GUI interface
-- **tello_keyboard/** - Keyboard teleoperation
 - **tello_ros/** - Tello driver interface
 - **tello_activation/** - Tello service activation
 
