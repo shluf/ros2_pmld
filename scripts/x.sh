@@ -36,6 +36,7 @@ function build_workspace() {
     echo "================================================"
     echo ""
     cd "$WORKSPACE"
+    source /opt/ros/humble/setup.bash
     colcon build --symlink-install
     echo ""
     echo "Build complete!"

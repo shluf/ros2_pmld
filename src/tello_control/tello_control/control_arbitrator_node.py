@@ -32,6 +32,9 @@ class ControlArbitratorNode(Node):
         # Last received commands
         self.last_manual_cmd = None
         self.last_manual_time = None
+
+        self.last_joy_cmd = None
+        self.last_joy_time = None
         
         self.last_gesture_cmd = None
         self.last_gesture_time = None
@@ -58,6 +61,13 @@ class ControlArbitratorNode(Node):
             Twist,
             '/manual/cmd_vel',
             self.manual_callback,
+            qos_reliable
+        )
+
+        self.joy_sub = self.create_subscription(
+            Twist,
+            '/joy/cmd_vel',
+            self.joy_callback,
             qos_reliable
         )
 
@@ -105,6 +115,11 @@ class ControlArbitratorNode(Node):
         self.last_manual_cmd = msg
         self.last_manual_time = time.time()
 
+    def joy_callback(self, msg: Twist):
+        """Receive joystick control command."""
+        self.last_joy_cmd = msg
+        self.last_joy_time = time.time()
+
     def gesture_callback(self, msg: Twist):
         """Receive gesture control command."""
         self.last_gesture_cmd = msg
@@ -130,6 +145,11 @@ class ControlArbitratorNode(Node):
             if self.is_command_valid(self.last_manual_time, current_time):
                 selected_cmd = self.last_manual_cmd
                 source = 'manual'
+
+        elif self.current_mode == 'joystick':
+            if self.is_command_valid(self.last_joy_time, current_time):
+                selected_cmd = self.last_joy_cmd
+                source = 'joystick'
 
         elif self.current_mode == 'gesture':
             if self.is_command_valid(self.last_gesture_time, current_time):

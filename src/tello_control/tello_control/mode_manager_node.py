@@ -18,6 +18,7 @@ import time
 class Mode(Enum):
     """Control mode enumeration."""
     MANUAL = "manual"
+    JOYSTICK = "joystick"
     GESTURE = "gesture"
     TRACKING = "tracking"
 
@@ -110,7 +111,7 @@ class ModeManagerNode(Node):
         except ValueError:
             self.get_logger().error(
                 f'Invalid mode: {requested_mode}. '
-                f'Valid modes: manual, gesture, tracking'
+                f'Valid modes: manual, joystick, gesture, tracking'
             )
             return
 

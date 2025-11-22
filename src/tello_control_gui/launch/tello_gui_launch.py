@@ -40,8 +40,7 @@ def generate_launch_description():
         output='screen',
         parameters=[
             {'namespace': LaunchConfiguration('namespace')},
-        ],
-        additional_env={'QT_QPA_PLATFORM_PLUGIN_PATH': ''}
+        ]
     )
     
     tello_driver = Node(
