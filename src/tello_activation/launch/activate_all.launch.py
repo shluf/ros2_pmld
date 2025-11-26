@@ -3,7 +3,7 @@
 
 import os
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -14,13 +14,7 @@ def generate_launch_description():
     tello_control_pkg = get_package_share_directory('tello_control')
     tello_perception_pkg = get_package_share_directory('tello_perception')
     
-    # Launch arguments
-    drone_ip_arg = DeclareLaunchArgument(
-        'drone_ip',
-        default_value='192.168.10.1',
-        description='IP address of the Tello drone'
-    )
-    
+    # Launch arguments  
     initial_mode_arg = DeclareLaunchArgument(
         'initial_mode',
         default_value='manual',
@@ -33,9 +27,12 @@ def generate_launch_description():
         executable='tello_driver_main',
         name='tello_driver',
         output='screen',
-        parameters=[{
-            'drone_ip': LaunchConfiguration('drone_ip'),
-        }]
+        parameters=[
+            {'tello_ip': '192.168.10.1'},
+            {'command_port': 8889},
+            {'data_port': 8890},
+            {'video_port': 11111},
+        ]
     )
 
     # 2. Perception System
@@ -71,28 +68,41 @@ def generate_launch_description():
         name='joy_controller',
         output='screen'
     )
-    tello_control_gui_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory('tello_control_gui'),
-                'launch',
-                'tello_gui_launch.py'
+
+    # Gesture Detector Node (hand tracking & skeleton)
+    # Delayed start to avoid conflicts with other MediaPipe/TensorFlow nodes
+    gesture_detector = TimerAction(
+        period=3.0,  # Wait 3 seconds for other nodes to initialize
+        actions=[
+            Node(
+                package='gesture_control',
+                executable='gesture_detector_node',
+                name='gesture_detector',
+                output='screen',
+                parameters=[
+                    {'use_drone_camera': True},
+                    {'debug_mode': False},
+                    {'webcam_id': 0},
+                ]
             )
-        ),
-        launch_arguments={
-            'with_driver': 'false',
-            'with_gesture': 'false',
-            'simulation': 'false'
-        }.items()
+        ]
+    )
+
+    tello_control_gui = Node(
+        package='tello_control_gui',
+        executable='tello_gui',
+        name='tello_control_gui',
+        output='screen'
     )
 
     return LaunchDescription([
-        drone_ip_arg,
         initial_mode_arg,
+
         tello_driver,
         perception_launch,
         control_launch,
         joy_node,
         joy_controller,
-        tello_control_gui_launch
+        gesture_detector,
+        tello_control_gui
     ])

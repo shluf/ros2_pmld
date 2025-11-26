@@ -17,7 +17,7 @@ def generate_launch_description():
     # Launch arguments
     initial_mode_arg = DeclareLaunchArgument(
         'initial_mode',
-        default_value='manual',
+        default_value='joystick',
         description='Initial control mode (manual, gesture, tracking)'
     )
 
@@ -82,6 +82,7 @@ def generate_launch_description():
     return LaunchDescription([
         initial_mode_arg,
         hover_duration_arg,
+        
         mode_manager,
         tracking_controller,
         control_arbitrator

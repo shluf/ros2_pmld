@@ -12,6 +12,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
 from tello_interfaces.msg import DetectionArray, ControlMode, ObjectDistanceArray
+from tello_interfaces.srv import SetNodeActive
 import time
 
 
@@ -204,6 +205,13 @@ class TrackingControllerNode(Node):
             '/tracking/annotated',
             qos_sensor
         )
+        
+        # Service for enabling/disabling node processing
+        self.active_srv = self.create_service(
+            SetNodeActive,
+            '/tracking/set_active',
+            self.set_active_callback
+        )
 
         # Timer for control loop
         self.control_timer = self.create_timer(0.05, self.control_loop)  # 20 Hz
@@ -212,6 +220,20 @@ class TrackingControllerNode(Node):
         self.get_logger().info(f'Target class: {self.target_class if self.target_class else "closest to center"}')
         self.get_logger().info(f'PID gains - X: {pid_x_kp}/{pid_x_ki}/{pid_x_kd}')
         self.get_logger().info(f'Deadzone: {self.deadzone}px, Max distance: {self.max_distance}m')
+
+    def set_active_callback(self, request, response):
+        """Handle node active/pause service requests."""
+        if request.active:
+            self.tracking_enabled = (self.current_mode == 'tracking')
+            status = "enabled" if self.tracking_enabled else "standby (not in tracking mode)"
+        else:
+            self.tracking_enabled = False
+            self.send_stop_command()
+            status = "paused"
+        response.success = True
+        response.message = f"Tracking controller {status}"
+        self.get_logger().info(response.message)
+        return response
 
     def mode_callback(self, msg: ControlMode):
         """Update tracking state based on mode."""

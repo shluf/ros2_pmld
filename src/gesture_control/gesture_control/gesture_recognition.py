@@ -166,19 +166,6 @@ class GestureRecognition:
         y = landmark_list[0][1] / image_shape[0]
         return (x, y)
 
-    def _debug_display(self, image):
-        fps_end = cv2.getTickCount()
-        time_diff = (fps_end - self.fps_start_time) / cv2.getTickFrequency()
-        fps = 1.0 / time_diff if time_diff > 0 else 0
-        self.fps_start_time = fps_end
-        cv2.putText(image, f'FPS:{fps:.1f}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        if self.current_hand_sign is not None:
-            cv2.putText(image, f'Hand:{self.current_hand_sign}', (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
-        if self.current_finger_gesture is not None:
-            cv2.putText(image, f'Gesture:{self.current_finger_gesture}', (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
-        cv2.imshow("GestureRecognition", image)
-        cv2.waitKey(1)
-
     def release(self):
         cv2.destroyAllWindows()
 

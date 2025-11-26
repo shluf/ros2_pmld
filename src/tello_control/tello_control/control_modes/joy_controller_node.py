@@ -99,6 +99,12 @@ class JoyControllerNode(Node):
             # Logitech slider: -1 (up) to 1 (down) usually.
             # Let's invert it so up is positive.
             twist.linear.z = -msg.axes[self.axis_lin_z] * self.scale_lin
+            self.get_logger().info('Sending command: %.2f, %.2f, %.2f, %.2f' % (
+                twist.linear.x,
+                twist.linear.y,
+                twist.linear.z,
+                twist.angular.z
+            ))
             
         self.cmd_vel_pub.publish(twist)
 

@@ -1,0 +1,8 @@
+# Service to enable/disable processing in perception nodes
+# Used to pause heavy processing when not in required mode
+
+string node_name  # Name of node: "gesture", "tracking", "yolo"
+bool active       # true = enable processing, false = pause
+---
+bool success
+string message

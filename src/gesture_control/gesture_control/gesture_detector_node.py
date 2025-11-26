@@ -7,6 +7,8 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from cv_bridge import CvBridge
 from ament_index_python.packages import get_package_share_directory
+from tello_interfaces.srv import SetGestureCamera, SetNodeActive
+from tello_interfaces.msg import ControlMode
 import os
 import cv2
 import json
@@ -15,10 +17,10 @@ from .gesture_recognition import GestureRecognition
 
 class GestureDetectorNode(Node):
     def __init__(self):
-        super().__init__('gesture_detector_node')
+        super().__init__('gesture_detector')
         
         # Parameters
-        self.declare_parameter('use_drone_camera', True)
+        self.declare_parameter('use_drone_camera', False)  # Default: webcam
         self.declare_parameter('debug_mode', False)
         self.declare_parameter('webcam_id', 0)
         self.declare_parameter('show_camera', True)
@@ -27,6 +29,9 @@ class GestureDetectorNode(Node):
         self.debug_mode = self.get_parameter('debug_mode').value
         self.webcam_id = self.get_parameter('webcam_id').value
         self.show_camera = self.get_parameter('show_camera').value
+        
+        # Camera source tracking: 'webcam' or 'drone'
+        self.camera_source = 'drone' if self.use_drone_camera else 'webcam'
         
         # Initialize CV Bridge
         self.bridge = CvBridge()
@@ -44,15 +49,22 @@ class GestureDetectorNode(Node):
             depth=10
         )
         
-        # Subscriber for drone camera
-        if self.use_drone_camera:
-            self.image_sub = self.create_subscription(
-                Image,
-                '/webcam/image_raw', 
-                self.image_callback,
-                qos_best_effort
-            )
-            self.get_logger().info('Subscribed to /webcam/image_raw')
+        # Subscribers for both camera sources
+        self.drone_image_sub = self.create_subscription(
+            Image,
+            '/image_raw',  # Drone camera
+            self.drone_image_callback,
+            qos_best_effort
+        )
+        
+        self.webcam_image_sub = self.create_subscription(
+            Image,
+            '/webcam/image_raw',  # Webcam from GUI
+            self.webcam_image_callback,
+            qos_best_effort
+        )
+        
+        self.get_logger().info('Subscribed to /image_raw and /webcam/image_raw')
         
         # Publishers
         self.gesture_pub = self.create_publisher(
@@ -67,6 +79,34 @@ class GestureDetectorNode(Node):
             qos_reliable
         )
         
+        # Service for switching camera source
+        self.camera_switch_srv = self.create_service(
+            SetGestureCamera,
+            '/gesture/set_camera',
+            self.camera_switch_callback
+        )
+        self.get_logger().info('Camera switch service ready: /gesture/set_camera')
+        
+        # Service for enabling/disabling node processing
+        self.active_srv = self.create_service(
+            SetNodeActive,
+            '/gesture/set_active',
+            self.set_active_callback
+        )
+        self.get_logger().info('Node active service ready: /gesture/set_active')
+        
+        # Subscribe to control mode to auto-pause when not in gesture mode
+        self.mode_sub = self.create_subscription(
+            ControlMode,
+            '/control_mode',
+            self.mode_callback,
+            qos_reliable
+        )
+        
+        # Processing state - paused when not in gesture mode
+        self.processing_active = True
+        self.current_mode = 'manual'
+        
         # Initialize gesture recognition
         pkg_share = get_package_share_directory('gesture_control')
         model_path = os.path.join(pkg_share, 'model')
@@ -76,41 +116,104 @@ class GestureDetectorNode(Node):
             debug=self.debug_mode
         )
         
-        # Webcam for debug/standalone mode
+        # Webcam for standalone mode (fallback if no ROS webcam topic)
         self.webcam = None
-        if not self.use_drone_camera:
-            self.get_logger().info(f'Using webcam {self.webcam_id}')
-            self.webcam = cv2.VideoCapture(self.webcam_id)
-            self.webcam.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
-            self.webcam.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
+        self.use_local_webcam = False  # Will be set if ROS webcam topic isn't available
         
-        self.received_first_frame = False
+        # Frame storage for both sources
+        self.drone_frame = None
+        self.webcam_frame = None
+        self.received_drone_frame = False
+        self.received_webcam_frame = False
         
         # Timer for processing
         self.timer = self.create_timer(0.033, self.process_loop)  # 30 FPS
         
-        self.get_logger().info('Gesture Detector Node initialized')
+        self.get_logger().info(f'Gesture Detector Node initialized (camera: {self.camera_source})')
 
-    def image_callback(self, msg):
+    def mode_callback(self, msg: ControlMode):
+        """Auto-pause/resume based on control mode."""
+        old_mode = self.current_mode
+        self.current_mode = msg.mode
+        
+        # Auto enable when switching to gesture mode
+        if msg.mode == 'gesture' and not self.processing_active:
+            self.processing_active = True
+            self.get_logger().info('Gesture mode active - processing resumed')
+        # Auto disable when leaving gesture mode
+        elif msg.mode != 'gesture' and old_mode == 'gesture':
+            self.processing_active = False
+            self.get_logger().info(f'Switched to {msg.mode} - gesture processing paused')
+
+    def set_active_callback(self, request, response):
+        """Handle node active/pause service requests."""
+        self.processing_active = request.active
+        status = "enabled" if request.active else "paused"
+        response.success = True
+        response.message = f"Gesture detector processing {status}"
+        self.get_logger().info(response.message)
+        return response
+
+    def camera_switch_callback(self, request, response):
+        """Handle camera switch service requests."""
+        source = request.camera_source.lower()
+        
+        if source not in ['webcam', 'drone']:
+            response.success = False
+            response.current_source = self.camera_source
+            response.message = f"Invalid camera source: {source}. Use 'webcam' or 'drone'."
+            self.get_logger().warn(response.message)
+            return response
+        
+        old_source = self.camera_source
+        self.camera_source = source
+        
+        response.success = True
+        response.current_source = self.camera_source
+        response.message = f"Camera source switched from '{old_source}' to '{source}'"
+        self.get_logger().info(response.message)
+        
+        return response
+
+    def drone_image_callback(self, msg):
+        """Callback for drone camera images."""
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            self.gesture_recognizer.update_frame(cv_image)
-            if not self.received_first_frame:
-                self.received_first_frame = True
-                self.get_logger().info('First frame received')
+            self.drone_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            if not self.received_drone_frame:
+                self.received_drone_frame = True
+                self.get_logger().info('First drone frame received')
         except Exception as e:
-            self.get_logger().error(f'Error converting image: {e}')
+            self.get_logger().error(f'Error converting drone image: {e}')
+
+    def webcam_image_callback(self, msg):
+        """Callback for webcam images from GUI."""
+        try:
+            self.webcam_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            if not self.received_webcam_frame:
+                self.received_webcam_frame = True
+                self.get_logger().info('First webcam frame received')
+        except Exception as e:
+            self.get_logger().error(f'Error converting webcam image: {e}')
 
     def process_loop(self):
-        # Handle webcam if not using drone camera
-        if not self.use_drone_camera and self.webcam is not None:
-            ret, frame = self.webcam.read()
-            if ret:
-                self.gesture_recognizer.update_frame(frame)
-        
-        # Skip if waiting for drone camera
-        if self.use_drone_camera and not self.received_first_frame:
+        """Main processing loop - process frame from selected camera source."""
+        # Skip processing if paused (not in gesture mode)
+        if not self.processing_active:
             return
+        
+        # Select frame based on camera source
+        frame = None
+        if self.camera_source == 'drone':
+            frame = self.drone_frame
+        else:  # webcam
+            frame = self.webcam_frame
+        
+        # Skip if no frame available from selected source
+        if frame is None:
+            return
+        
+        # Update gesture recognizer with selected frame
+        self.gesture_recognizer.update_frame(frame)
 
         # Process gestures
         hand_sign, finger_gesture, hand_position, annotated_img = self.gesture_recognizer.process(return_image=True)
@@ -127,7 +230,8 @@ class GestureDetectorNode(Node):
         gesture_data = {
             'hand_sign': hand_sign,
             'finger_gesture': finger_gesture,
-            'hand_position': hand_position, # [x, y] or None
+            'hand_position': hand_position,
+            'camera_source': self.camera_source,
             'timestamp': self.get_clock().now().nanoseconds
         }
         

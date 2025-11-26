@@ -11,8 +11,10 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 from tello_interfaces.msg import ControlMode
+from tello_interfaces.srv import SetControlMode
 from enum import Enum
 import time
+from typing import Tuple
 
 
 class Mode(Enum):
@@ -60,11 +62,10 @@ class ModeManagerNode(Node):
         )
 
         # Subscribers
-        self.mode_switch_sub = self.create_subscription(
-            String,
+        self.mode_switch_srv = self.create_service(
+            SetControlMode,
             '/mode_switch',
-            self.mode_switch_callback,
-            qos_reliable
+            self.mode_switch_service_callback
         )
 
         self.camera_switch_sub = self.create_subscription(
@@ -101,34 +102,54 @@ class ModeManagerNode(Node):
         # Publish initial status
         self.publish_mode_status()
 
-    def mode_switch_callback(self, msg: String):
-        """Handle mode switch request."""
-        requested_mode = msg.data.lower()
+    def mode_switch_service_callback(self, request: SetControlMode.Request, response: SetControlMode.Response):
+        """Handle SetControlMode service requests."""
+        success, message = self._process_mode_request(request.mode)
+        response.success = success
+        response.current_mode = self.current_mode.value
+        response.message = message
 
-        # Validate mode
+        if request.camera_source:
+            cam_success, cam_message = self._process_camera_request(request.camera_source)
+            if cam_message:
+                response.message = f"{message} | {cam_message}" if message else cam_message
+            response.success = success and cam_success
+
+        return response
+
+    def _process_mode_request(self, requested_mode: str) -> Tuple[bool, str]:
+        """Validate and initiate a mode change request."""
+        requested_mode = (requested_mode or '').strip().lower()
+
+        if not requested_mode:
+            msg = 'Empty mode request received'
+            self.get_logger().error(msg)
+            return False, msg
+
         try:
             new_mode = Mode(requested_mode)
         except ValueError:
-            self.get_logger().error(
+            msg = (
                 f'Invalid mode: {requested_mode}. '
                 f'Valid modes: manual, joystick, gesture, tracking'
             )
-            return
+            self.get_logger().error(msg)
+            return False, msg
 
-        # Check if already in this mode
         if new_mode == self.current_mode:
-            self.get_logger().info(f'Already in {new_mode.value} mode')
-            return
+            msg = f'Already in {new_mode.value} mode'
+            self.get_logger().info(msg)
+            return True, msg
 
-        # Check if transition already in progress
         if self.transition_state != TransitionState.IDLE:
-            self.get_logger().warn(
-                f'Transition already in progress to {self.target_mode.value}. '
+            target = self.target_mode.value if self.target_mode else 'unknown'
+            msg = (
+                f'Transition already in progress to {target}. '
                 f'Ignoring request for {new_mode.value}'
             )
-            return
+            self.get_logger().warn(msg)
+            return False, msg
 
-        # Start transition
         self.get_logger().info(
             f'Mode switch requested: {self.current_mode.value} → {new_mode.value}'
         )
@@ -136,27 +157,41 @@ class ModeManagerNode(Node):
         self.transition_state = TransitionState.HOVERING
         self.transition_start_time = time.time()
 
-        # Send hover command immediately
         self.send_hover_command()
-        self.get_logger().info(f'Hovering before mode switch...')
+        self.get_logger().info('Hovering before mode switch...')
+        return True, f'Hovering before switching to {new_mode.value}'
 
     def camera_switch_callback(self, msg: String):
         """Handle camera source switch (for gesture mode)."""
-        requested_source = msg.data.lower()
+        self._process_camera_request(msg.data)
+
+    def _process_camera_request(self, requested_source: str) -> Tuple[bool, str]:
+        requested_source = (requested_source or '').strip().lower()
+
+        if not requested_source:
+            msg = 'Empty camera source request received'
+            self.get_logger().error(msg)
+            return False, msg
 
         if requested_source not in ['drone', 'webcam']:
-            self.get_logger().error(
+            msg = (
                 f'Invalid camera source: {requested_source}. '
                 f'Valid sources: drone, webcam'
             )
-            return
+            self.get_logger().error(msg)
+            return False, msg
 
         if requested_source != self.camera_source:
-            self.get_logger().info(f'Camera source changed: {self.camera_source} → {requested_source}')
+            self.get_logger().info(
+                f'Camera source changed: {self.camera_source} → {requested_source}'
+            )
             self.camera_source = requested_source
             self.publish_mode_status()
-        else:
-            self.get_logger().info(f'Camera source already set to {requested_source}')
+            return True, f'Camera source set to {requested_source}'
+
+        msg = f'Camera source already set to {requested_source}'
+        self.get_logger().info(msg)
+        return True, msg
 
     def transition_update(self):
         """Update transition state machine."""

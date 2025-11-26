@@ -1,0 +1,15 @@
+# Request to switch gesture recognition camera source
+
+# Camera source: 'webcam' or 'drone'
+string camera_source
+
+---
+
+# True if the camera switch was successful
+bool success
+
+# Camera source that is now active
+string current_source
+
+# Additional message for the caller
+string message

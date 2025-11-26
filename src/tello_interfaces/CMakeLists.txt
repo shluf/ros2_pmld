@@ -18,6 +18,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ObjectDistance.msg"
   "msg/ObjectDistanceArray.msg"
   "msg/ControlMode.msg"
+  "srv/SetControlMode.srv"
+  "srv/SetGestureCamera.srv"
+  "srv/SetNodeActive.srv"
   DEPENDENCIES std_msgs geometry_msgs
 )
 

@@ -123,6 +123,10 @@ class ArucoDetectorNode(Node):
 
             # Detect ArUco markers
             corners, ids, rejected = self.aruco_detector.detectMarkers(gray)
+            
+            # Debug: Log rejected candidates (potential markers not in dictionary)
+            if len(rejected) > 0 and ids is None:
+                self.get_logger().debug(f'Found {len(rejected)} rejected candidates - marker may be wrong dictionary type')
 
             # Create pose array message
             pose_array = PoseArray()
