@@ -64,24 +64,37 @@ def generate_launch_description():
         description='Show camera feed with gesture detection'
     )
     
-    # Gesture controller node
-    gesture_controller_node = Node(
+    # Gesture Detector Node (Perception)
+    gesture_detector_node = Node(
         package='gesture_control',
-        executable='gesture_controller',
-        name='gesture_controller',
+        executable='gesture_detector_node',
+        name='gesture_detector',
         output='screen',
         parameters=[
-            {'namespace': LaunchConfiguration('namespace')},
             {'use_drone_camera': LaunchConfiguration('use_drone_camera')},
             {'debug_mode': LaunchConfiguration('debug_mode')},
             {'webcam_id': LaunchConfiguration('webcam_id')},
+            {'show_camera': LaunchConfiguration('show_camera')},
+        ],
+        remappings=[
+            ('image_raw', ['/image_raw']),
+        ]
+    )
+
+    # Gesture Control Node (Action)
+    gesture_control_node = Node(
+        package='tello_control',
+        executable='gesture_control_node',
+        name='gesture_control',
+        output='screen',
+        parameters=[
+            {'namespace': LaunchConfiguration('namespace')},
             {'enable_safety': LaunchConfiguration('enable_safety')},
-            {'config_file': config_file},
+            {'config_file': 'config/gesture_mapping.yaml'},
         ],
         remappings=[
             ('cmd_vel', ['/cmd_vel']),
             ('tello_action', ['/tello_action']),
-            ('image_raw', ['/image_raw']),
         ]
     )
     
@@ -114,7 +127,8 @@ def generate_launch_description():
         show_camera_arg,
         
         # Nodes
-        gesture_controller_node,
+        gesture_detector_node,
+        gesture_control_node,
         gazebo_launch,
         # rviz_node,  # Uncomment jika ingin RViz
     ])

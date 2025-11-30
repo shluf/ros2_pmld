@@ -1,0 +1,19 @@
+# Request to change the control mode handled by ModeManager
+
+# Desired mode name (manual, joystick, gesture, tracking)
+string mode
+
+# Optional camera source override when switching to gesture mode ('drone' or 'webcam').
+# Leave empty to keep the current camera_source value.
+string camera_source
+
+---
+
+# True if the mode change request was accepted.
+bool success
+
+# Mode that is now active (or unchanged when success=false).
+string current_mode
+
+# Additional information for the caller.
+string message

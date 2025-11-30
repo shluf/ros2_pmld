@@ -37,24 +37,36 @@ def generate_launch_description():
         )
     )
     
-    # Gesture controller for Gazebo
-    gesture_controller_node = Node(
+    # Gesture Detector (Perception)
+    gesture_detector_node = Node(
         package='gesture_control',
-        executable='gesture_controller',
-        name='gesture_controller',
+        executable='gesture_detector_node',
+        name='gesture_detector',
+        output='screen',
+        parameters=[
+            {'use_drone_camera': False},
+            {'debug_mode': LaunchConfiguration('debug_mode')},
+        ],
+        remappings=[
+            ('image_raw', ['/', LaunchConfiguration('namespace'), '/image_raw']),
+        ]
+    )
+
+    # Gesture Control (Action)
+    gesture_control_node = Node(
+        package='tello_control',
+        executable='gesture_control_node',
+        name='gesture_control',
         output='screen',
         parameters=[
             {'namespace': LaunchConfiguration('namespace')},
-            {'use_drone_camera': False},  # Use Gazebo camera
-            {'debug_mode': LaunchConfiguration('debug_mode')},
-            {'enable_safety': False},  # Disable for easier testing
-            {'gesture_hold_time': 0.5},  # Shorter for testing
-            {'config_file': config_file},
+            {'enable_safety': False},
+            {'gesture_hold_time': 0.5},
+            {'config_file': 'config/gesture_mapping.yaml'},
         ],
         remappings=[
             ('cmd_vel', ['/', LaunchConfiguration('namespace'), '/cmd_vel']),
             ('tello_action', ['/', LaunchConfiguration('namespace'), '/tello_action']),
-            ('image_raw', ['/', LaunchConfiguration('namespace'), '/image_raw']),
         ]
     )
     
@@ -66,6 +78,7 @@ def generate_launch_description():
         # Launch Gazebo first
         gazebo_launch,
         
-        # Then gesture controller
-        gesture_controller_node,
+        # Then gesture nodes
+        gesture_detector_node,
+        gesture_control_node,
     ])

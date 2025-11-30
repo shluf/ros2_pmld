@@ -1,30 +1,97 @@
-# ROS2 PMLD (Tello Drone Control)
+# ROS2 PMLD (Tello Drone Multi-Mode Control)
 
-A ROS2-based Tello drone control project featuring gesture control, keyboard control, Gazebo simulation, and GUI interface.
+A comprehensive ROS2-based Tello drone control system featuring multi-mode operation (Manual, Gesture, Autonomous Tracking), advanced perception, and Docker integration.
 
-## Overview
+## 🎯 Overview
 
-This project implements a comprehensive control system for Tello/Tello EDU drones using ROS2, featuring:
+This project implements an advanced multi-mode control system for Tello/Tello EDU drones using ROS 2 Humble, featuring:
 
+### **Multi-Mode Control System (NEW)**
+- **Manual Mode** - Keyboard/GUI control with full 6-DOF movement
+- **Gesture Mode** - Hand gesture control using MediaPipe
+- **Tracking Mode** - Autonomous object tracking with YOLO + PID control
+- **Graceful Mode Switching** - Automatic hover transitions between modes
+
+### **Advanced Perception (NEW)**
+- **YOLO Object Detection** - Real-time object detection with YOLOv8
+- **ArUco Marker Detection** - Reference marker for distance estimation
+- **Distance Measurement** - Pixel-to-metric conversion for spatial awareness
+
+### **Original Features**
 - **Interactive Menu System** - Easy-to-use script for launching all modes
-- **Gesture Control** - Control drone with hand gestures using MediaPipe + TFLite
-- **Keyboard Control** - Manual control with full 6-DOF movement
+- **Gesture Control** - Control drone with hand gestures using MediaPipe
 - **GUI Interface** - PyQt5-based graphical control panel
 - **Gazebo Simulation** - Safe testing environment
 - **Real Drone Support** - Tested with Tello/Tello EDU
-- **Debug Modes** - Multiple testing configurations
-- **Safety Features** - Gesture hold time, confirmations, emergency stop
 
-## Prerequisites
+### **🐳 Docker Integration (NEW)**
+- **Ubuntu 22.04 + ROS 2 Humble** - Fully containerized environment
+- **Multi-stage builds** - Optimized images for production and development
+- **Easy deployment** - One-command build and run
+- **Cross-platform** - Works on Linux, Windows (WSL2), and macOS
 
-- ROS2 (Foxy/Humble)
-- Python 3.8+
-- Gazebo Classic (gazebo11)
-- ROS2 packages: `gazebo_ros_pkgs`, `robot_state_publisher`, `joy`
-- Python packages: `opencv-python`, `mediapipe`, `tensorflow-lite`, `PyQt5`
-- Colcon build tools
+## 📋 Prerequisites
 
-## Installation
+### Option 1: Docker (Recommended - Easiest Setup)
+
+- **Docker Desktop** (Windows/macOS) or **Docker Engine** (Linux)
+- **Docker Compose** (included with Docker Desktop)
+- For GUI: **WSLg** (Windows 11) or **VcXsrv** (Windows 10) or **XQuartz** (macOS)
+
+**See [DOCKER.md](DOCKER.md) for detailed Docker setup instructions.**
+
+### Option 2: Native Installation
+
+- **ROS 2 Humble** (Ubuntu 22.04)
+- **Python 3.10+**
+- **Gazebo Classic** (gazebo11)
+- **ROS 2 packages**: `gazebo_ros_pkgs`, `robot_state_publisher`, `cv_bridge`, `image_transport`
+- **Python packages**: `ultralytics`, `opencv-contrib-python`, `mediapipe`, `PyQt5`
+- **Colcon build tools**
+
+## 🚀 Installation
+
+### 🐳 Docker Installation (Recommended)
+
+#### Linux/macOS
+```bash
+cd ~/ros2_pmld
+
+# Build Docker image
+./docker/docker.sh build
+
+# Run container
+./docker/docker.sh run
+
+# Enter container shell
+./docker/docker.sh shell
+
+# Inside container: Launch multi-mode system
+ros2 launch tello_control full_system.launch.py
+```
+
+#### Windows (PowerShell)
+```powershell
+cd C:\path\to\ros2_pmld
+
+# Build Docker image
+.\docker\docker.ps1 build
+
+# Run container
+.\docker\docker.ps1 run
+
+# Enter container shell
+.\docker\docker.ps1 shell
+
+# Inside container: Launch multi-mode system
+ros2 launch tello_control full_system.launch.py
+```
+
+**📖 For complete Docker documentation, see [DOCKER.md](DOCKER.md)**
+
+---
+
+### 🔧 Native Installation (Alternative)
 
 1. **Clone the repository:**
 ```bash
@@ -35,25 +102,60 @@ cd ros2_pmld
 
 2. **Install dependencies:**
 ```bash
-source scripts/setup.sh
+# Install ROS 2 dependencies
+sudo apt update
+sudo apt install ros-humble-cv-bridge ros-humble-image-transport
+
+# Install Python packages
+pip install ultralytics opencv-contrib-python mediapipe PyQt5
 ```
 
 3. **Build the workspace:**
 ```bash
+# Use automated build script
+./build_system.ps1  # Windows
+# OR
+python build_system.py  # Cross-platform
+
+# Or build manually
 colcon build --symlink-install
-# Or use the menu
-./scripts/x.sh
-# Then choose option 1
 ```
 
 4. **Source the environment:**
 ```bash
-source scripts/init.sh
+source install/setup.bash
 ```
 
-## Quick Start
+## 🎮 Quick Start
 
-### Method 1: Interactive Menu
+### Multi-Mode Control System
+
+```bash
+# Launch full multi-mode system
+ros2 launch tello_control full_system.launch.py initial_mode:=manual
+
+# Switch between modes via topic
+ros2 topic pub /mode_switch std_msgs/String "data: 'tracking'" --once
+ros2 topic pub /mode_switch std_msgs/String "data: 'gesture'" --once
+ros2 topic pub /mode_switch std_msgs/String "data: 'manual'" --once
+
+# Monitor current mode
+ros2 topic echo /control_mode
+
+# Launch only perception system
+ros2 launch tello_perception perception.launch.py
+
+# Launch only control system
+ros2 launch tello_control control_system.launch.py
+```
+
+** For complete usage guide, see [QUICKSTART.md](docs/QUICKSTART.md)**
+
+---
+
+### Original Menu System
+
+#### Method 1: Interactive Menu
 ```bash
 ./scripts/x.sh
 ```
@@ -83,7 +185,7 @@ source scripts/init.sh
 
 ```
 
-### Method 2: Quick Commands
+#### Method 2: Quick Commands
 ```bash
 
 # Build workspace
@@ -133,6 +235,77 @@ ros2 launch tello_control_gui tello_gui_launch.py \
     simulation:=false
 ```
 
+## Package Structure
+
+### New Multi-Mode Control Packages
+
+- **tello_interfaces/** - Custom ROS 2 message definitions
+  - `Detection.msg`, `DetectionArray.msg` - YOLO detection results
+  - `ObjectDistance.msg`, `ObjectDistanceArray.msg` - Distance measurements
+  - `ControlMode.msg` - Current control mode status
+
+- **tello_perception/** - Perception layer (NEW)
+  - `yolo_detector_node` - YOLOv8 object detection
+  - `aruco_detector_node` - ArUco marker detection
+  - `distance_estimator_node` - Pixel-to-metric distance estimation
+
+- **tello_control/** - Multi-mode control layer (UPDATED)
+  - `mode_manager_node` - Mode switching with graceful transitions
+  - `control_arbitrator_node` - Command multiplexing
+  - **control_modes/** - Specific controllers:
+    - `tracking_controller_node` - PID-based autonomous tracking
+    - `gesture_control_node` - Gesture-based control logic
+    - `keyboard_controller` - Keyboard teleoperation
+    - `joy_controller_node` - Joystick control (Logitech Extreme 3D)
+
+### Original Packages
+
+- **gesture_control/** - Hand gesture recognition (UPDATED)
+  - `gesture_detector_node` - Detects gestures and publishes status (Perception only)
+  
+- **tello_control_gui/** - PyQt5 GUI interface
+- **tello_ros/** - Tello driver interface
+- **tello_activation/** - Tello service activation
+
+---
+
+## Documentation
+
+- **[DOCKER.md](docs/DOCKER.md)** - Complete Docker integration guide
+- **[QUICKSTART.md](docs/QUICKSTART.md)** - Quick start and usage guide
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System architecture and design
+- **[IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md)** - Implementation details
+
+---
+
+## Configuration
+
+### Multi-Mode System Configuration
+
+**Perception config** (`config/perception.yaml`):
+```yaml
+yolo_detector:
+  model_name: yolov8n  # or yolov8s
+  confidence_threshold: 0.5
+  device: cpu  # or cuda
+
+aruco_detector:
+  marker_size: 0.10  # meters
+  camera_matrix: [...]
+```
+
+**Control config** (`config/tracking.yaml`):
+```yaml
+tracking_controller:
+  pid_gains:
+    x: {kp: 0.5, ki: 0.0, kd: 0.1}
+    y: {kp: 0.5, ki: 0.0, kd: 0.1}
+    z: {kp: 0.5, ki: 0.0, kd: 0.1}
+  target_distance: 1.5  # meters
+```
+
+---
+
 ## Gesture Controls
 
 Control the drone with hand gestures!
@@ -143,15 +316,6 @@ Control the drone with hand gestures!
 | 👆 **Pointer** (1 finger) | Rotate | Drone rotates based on hand position |
 | ✊ **Closed Fist** | Move Backward | Drone moves backward |
 | 👌 **OK Sign** | Land | Drone lands safely |
-
-
-### Gesture Modes
-
-| Mode | Safety | Hold Time | Debug | Best For |
-|------|--------|-----------|-------|----------|
-| **Gazebo Debug** | ✗ | 0.5s | ✓ | Fast testing & development |
-| **Gazebo Production** | ✓ | 1.0s | ✗ | Pre-flight testing |
-| **Real Drone** | ✓ | 1.0s | ✗ | Actual flying |
 
 ## Keyboard Controls
 

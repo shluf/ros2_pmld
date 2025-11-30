@@ -1,0 +1,94 @@
+# Docker ignore file for ROS 2 workspace
+# Excludes unnecessary files from Docker build context
+
+# Build artifacts
+build/
+install/
+log/
+.colcon/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+*.egg
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git/
+.gitignore
+.gitmodules
+
+# Documentation (include only necessary ones)
+*.md
+!README.md
+!ARCHITECTURE.md
+!QUICKSTART.md
+
+# Test files (will be copied separately if needed)
+tests/
+*.test
+*.bag
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+*.orig
+
+# OS files
+Thumbs.db
+.directory
+
+# Docker files (don't copy Docker files into the image)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Scripts (will be copied separately)
+*.ps1
+
+# Model files (downloaded during build)
+*.pt
+*.pth
+*.onnx
+*.weights
+
+# Media files
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.mp4
+*.avi
+*.bag
+*.db3
+
+# ROS specific
+*.bag
+*.db3
+*.yaml.bak
+src/.git/
+
+# Development tools config
+.pylintrc
+.flake8
+.mypy.ini
+pytest.ini
+.coverage
+
+# Documentation builds
+docs/_build/
+site/

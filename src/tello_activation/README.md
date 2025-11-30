@@ -124,7 +124,6 @@ cd ~/ros2_pmld
 colcon build --packages-select \
   tello_driver \
   tello_msgs \
-  tello_keyboard \
   tello_gazebo \
   tello_description \
   tello_activation

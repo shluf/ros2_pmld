@@ -28,7 +28,7 @@ def generate_launch_description():
     
     # Keyboard controller node
     keyboard_node = Node(
-        package='tello_keyboard',
+        package='tello_control',
         executable='keyboard_controller',
         name='keyboard_controller',
         output='screen',

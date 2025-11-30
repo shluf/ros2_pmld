@@ -35,7 +35,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'gesture_controller = gesture_control.gesture_controller:main',
+            'gesture_detector_node = gesture_control.gesture_detector_node:main',
             'test_gesture = gesture_control.gesture_recognition:main',
         ],
     },
