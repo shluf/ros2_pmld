@@ -21,6 +21,8 @@ class JoyControllerNode(Node):
         self.declare_parameter('deadman_button', 0)  # Trigger
         self.declare_parameter('takeoff_button', 2)  # Button 3 (Thumb)
         self.declare_parameter('land_button', 1)     # Button 2 (Thumb)
+        self.declare_parameter('up_button', 4)
+        self.declare_parameter('down_button', 5)
         self.declare_parameter('emergency_button', 6) # Base button
         self.declare_parameter('axis_linear_x', 1)   # Pitch
         self.declare_parameter('axis_linear_y', 0)   # Roll
@@ -32,6 +34,8 @@ class JoyControllerNode(Node):
         self.deadman_btn = self.get_parameter('deadman_button').value
         self.takeoff_btn = self.get_parameter('takeoff_button').value
         self.land_btn = self.get_parameter('land_button').value
+        self.up_btn = self.get_parameter('up_button').value
+        self.down_btn = self.get_parameter('down_button').value
         self.emergency_btn = self.get_parameter('emergency_button').value
         
         self.axis_lin_x = self.get_parameter('axis_linear_x').value
@@ -83,28 +87,35 @@ class JoyControllerNode(Node):
             self.send_action('land')
         elif msg.buttons[self.emergency_btn]:
             self.send_action('emergency')
+        # elif msg.buttons[self.up_btn]:
+        #     twist.linear.z = 50.0
+        # elif msg.buttons[self.down_btn]:
+        #     twist.linear.z = -50.0
             
         # Movement
         twist = Twist()
         
         # Only move if deadman switch is held
         if msg.buttons[self.deadman_btn]:
-            twist.linear.x = msg.axes[self.axis_lin_x] * self.scale_lin
             twist.linear.y = msg.axes[self.axis_lin_y] * self.scale_lin
-            twist.angular.z = msg.axes[self.axis_ang_z] * self.scale_ang
-            
+            twist.linear.z = -msg.axes[self.axis_lin_x] * self.scale_lin
             # Throttle might be 0..1 or -1..1 depending on joystick
             # Assuming -1..1 where -1 is up? Or standard?
             # Usually up is -1 on some, 1 on others. Let's assume standard: forward/up is positive.
             # Logitech slider: -1 (up) to 1 (down) usually.
             # Let's invert it so up is positive.
-            twist.linear.z = -msg.axes[self.axis_lin_z] * self.scale_lin
+            # twist.linear.z = -msg.axes[self.axis_lin_z] * self.scale_lin
             self.get_logger().info('Sending command: %.2f, %.2f, %.2f, %.2f' % (
                 twist.linear.x,
                 twist.linear.y,
                 twist.linear.z,
                 twist.angular.z
             ))
+        else:
+            twist.linear.x = msg.axes[self.axis_lin_x] * self.scale_lin
+            twist.linear.y = msg.axes[self.axis_lin_y] * self.scale_lin
+            twist.angular.z = msg.axes[self.axis_ang_z] * self.scale_ang
+
             
         self.cmd_vel_pub.publish(twist)
 

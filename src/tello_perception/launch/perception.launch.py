@@ -43,7 +43,7 @@ def generate_launch_description():
             'model_name': LaunchConfiguration('model_name'),
             'confidence_threshold': LaunchConfiguration('confidence_threshold'),
             'device': 'cpu',
-            'target_classes': ['person', 'bottle', 'cup'],
+            'target_classes': ['person', 'bottle', 'cup', 'backpack'],
             'publish_annotated': True
         }]
     )

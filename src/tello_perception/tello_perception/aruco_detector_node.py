@@ -22,7 +22,7 @@ class ArucoDetectorNode(Node):
         super().__init__('aruco_detector_node')
 
         # Parameters
-        self.declare_parameter('marker_size', 0.10)  # Marker size in meters (10cm default)
+        self.declare_parameter('marker_size', 0.06)  # Marker size in meters (10cm default)
         self.declare_parameter('aruco_dict', 'DICT_4X4_50')
         self.declare_parameter('image_topic', '/image_raw')
         self.declare_parameter('camera_info_topic', '/camera_info')
@@ -32,7 +32,7 @@ class ArucoDetectorNode(Node):
         self.declare_parameter('camera_matrix', [921.0, 0.0, 480.0, 0.0, 921.0, 360.0, 0.0, 0.0, 1.0])
         self.declare_parameter('distortion_coeffs', [0.0, 0.0, 0.0, 0.0, 0.0])
 
-        self.marker_size = self.get_parameter('marker_size').value
+        self.marker_size = 0.06  # meters
         self.aruco_dict_name = self.get_parameter('aruco_dict').value
         self.image_topic = self.get_parameter('image_topic').value
         self.camera_info_topic = self.get_parameter('camera_info_topic').value

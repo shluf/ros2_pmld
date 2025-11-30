@@ -60,7 +60,7 @@ def generate_launch_description():
             'pid_yaw.kd': 0.05,
             'max_linear_velocity': 0.5,
             'max_angular_velocity': 0.5,
-            'target_class': 'person',
+            'target_class': ['person', 'bottle', 'backpack'],
             'deadzone_pixels': 50,
             'max_tracking_distance': 3.0,
             'frame_width': 960,
