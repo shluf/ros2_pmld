@@ -9,9 +9,11 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QPushButton, QGroupBox, 
                              QGridLayout, QSlider, QProgressBar, QTabWidget,
-                             QFrame, QComboBox, QCheckBox)
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QCoreApplication, QRect
+                             QFrame, QComboBox, QCheckBox, QMenu, QToolButton,
+                             QFileDialog, QMessageBox)
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QCoreApplication, QRect, QDateTime
 from PyQt5.QtGui import QImage, QPixmap, QFont, QPainter, QColor, QPen
+from PyQt5.QtPrintSupport import QPrinter
 
 from sensor_msgs.msg import Image, CompressedImage
 from geometry_msgs.msg import Twist, PoseArray
@@ -24,6 +26,9 @@ from tello_interfaces.srv import SetControlMode, SetGestureCamera
 import numpy as np
 import math
 import json
+import os
+from datetime import datetime
+from pathlib import Path
 
 cv2 = None
 CvBridge = None
@@ -1661,9 +1666,6 @@ class GestureControlWidget(QWidget):
             "• 👈 Point left: Move left<br>"
             "• 👉 Point right: Move right<br>"
             "• ✌️ Peace sign: Emergency stop<br><br>"
-            "<b>Camera Source:</b><br>"
-            "• Webcam: Use laptop camera<br>"
-            "• Drone: Use drone camera"
         )
         instructions.setWordWrap(True)
         instructions.setStyleSheet("padding: 10px;")
@@ -1711,6 +1713,365 @@ class GestureControlWidget(QWidget):
             """)
 
 
+class ExportRecordWidget(QWidget):
+    """Widget for export and video recording functionality"""
+    
+    def __init__(self, get_frame_callback, get_telemetry_callback):
+        super().__init__()
+        self.get_frame = get_frame_callback
+        self.get_telemetry = get_telemetry_callback
+        self.export_format = 'png'  # Default format
+        self.is_recording = False
+        self.video_writer = None
+        self.record_start_time = None
+        self.downloads_path = str(Path.home() / 'Downloads')
+        self.setup_ui()
+        
+        # Timer for recording
+        self.record_timer = QTimer()
+        self.record_timer.timeout.connect(self.write_frame)
+        
+    def setup_ui(self):
+        layout = QHBoxLayout()
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+        
+        # Export button
+        self.export_btn = QPushButton("Export")
+        self.export_btn.setMinimumHeight(40)
+        self.export_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: #0D47A1;
+            }
+        """)
+        self.export_btn.clicked.connect(self.do_export)
+        layout.addWidget(self.export_btn, stretch=2)
+        
+        # Format dropdown button
+        self.format_btn = QToolButton()
+        self.format_btn.setText("PNG")
+        self.format_btn.setMinimumHeight(40)
+        self.format_btn.setMinimumWidth(70)
+        self.format_btn.setPopupMode(QToolButton.InstantPopup)
+        self.format_btn.setStyleSheet("""
+            QToolButton {
+                background-color: #1565C0;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 8px;
+            }
+            QToolButton:hover {
+                background-color: #0D47A1;
+            }
+            QToolButton::menu-indicator {
+                image: none;
+            }
+        """)
+        
+        # Format menu
+        format_menu = QMenu(self)
+        format_menu.setStyleSheet("""
+            QMenu {
+                background-color: #1a1a2e;
+                color: white;
+                border: 1px solid #333;
+            }
+            QMenu::item:selected {
+                background-color: #2196F3;
+            }
+        """)
+        
+        png_action = format_menu.addAction("PNG (Image)")
+        png_action.triggered.connect(lambda: self.set_format('png'))
+        pdf_action = format_menu.addAction("PDF (Report)")
+        pdf_action.triggered.connect(lambda: self.set_format('pdf'))
+        
+        self.format_btn.setMenu(format_menu)
+        layout.addWidget(self.format_btn)
+        
+        # Record button
+        self.record_btn = QPushButton("Record")
+        self.record_btn.setMinimumHeight(40)
+        self.record_btn.setCheckable(True)
+        self.record_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #388E3C;
+            }
+            QPushButton:checked {
+                background-color: #F44336;
+            }
+            QPushButton:checked:hover {
+                background-color: #D32F2F;
+            }
+        """)
+        self.record_btn.clicked.connect(self.toggle_recording)
+        layout.addWidget(self.record_btn, stretch=2)
+        
+        # Recording time label
+        self.record_time_label = QLabel("00:00")
+        self.record_time_label.setStyleSheet("""
+            color: #888;
+            font-size: 11px;
+            font-weight: bold;
+        """)
+        self.record_time_label.setFixedWidth(45)
+        self.record_time_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.record_time_label)
+        
+        self.setLayout(layout)
+        
+    def set_format(self, fmt):
+        """Set export format"""
+        self.export_format = fmt
+        if fmt == 'png':
+            self.format_btn.setText("PNG")
+        else:
+            self.format_btn.setText("PDF")
+    
+    def do_export(self):
+        """Export current frame with annotations"""
+        try:
+            # Get current frame from drone video widget
+            pixmap = self.get_frame()
+            if pixmap is None or pixmap.isNull():
+                QMessageBox.warning(self, "Export Error", "No video frame available to export.")
+                return
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            if self.export_format == 'png':
+                self.export_png(pixmap, timestamp)
+            else:
+                self.export_pdf(pixmap, timestamp)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export: {str(e)}")
+    
+    def export_png(self, pixmap, timestamp):
+        """Export as PNG image"""
+        filename = os.path.join(self.downloads_path, f"tello_capture_{timestamp}.png")
+        
+        if pixmap.save(filename, "PNG"):
+            QMessageBox.information(self, "Export Success", 
+                f"Image saved to:\n{filename}")
+        else:
+            QMessageBox.warning(self, "Export Error", "Failed to save image.")
+    
+    def export_pdf(self, pixmap, timestamp):
+        """Export as PDF report with telemetry"""
+        filename = os.path.join(self.downloads_path, f"tello_report_{timestamp}.pdf")
+        
+        # Get telemetry data
+        telemetry = self.get_telemetry()
+        
+        # Create PDF using QPrinter
+        printer = QPrinter(QPrinter.HighResolution)
+        printer.setOutputFormat(QPrinter.PdfFormat)
+        printer.setOutputFileName(filename)
+        printer.setPageSize(printer.A4)
+        
+        painter = QPainter()
+        if not painter.begin(printer):
+            QMessageBox.warning(self, "Export Error", "Failed to create PDF.")
+            return
+        
+        try:
+            page_rect = printer.pageRect()
+            
+            # Title
+            painter.setFont(QFont("Arial", 24, QFont.Bold))
+            painter.setPen(QColor(33, 150, 243))
+            painter.drawText(50, 80, "Tello Drone Flight Report")
+            
+            # Timestamp
+            painter.setFont(QFont("Arial", 12))
+            painter.setPen(QColor(100, 100, 100))
+            time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            painter.drawText(50, 120, f"Captured: {time_str}")
+            
+            # Draw image
+            img_width = int(page_rect.width() * 0.9)
+            img_height = int(img_width * pixmap.height() / pixmap.width())
+            scaled_pixmap = pixmap.scaled(img_width, img_height, 
+                                          Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            img_x = int((page_rect.width() - scaled_pixmap.width()) / 2)
+            painter.drawPixmap(img_x, 160, scaled_pixmap)
+            
+            # Telemetry section
+            y_pos = 180 + img_height + 40
+            
+            painter.setFont(QFont("Arial", 16, QFont.Bold))
+            painter.setPen(QColor(76, 175, 80))
+            painter.drawText(50, y_pos, "Telemetry Data")
+            y_pos += 30
+            
+            painter.setFont(QFont("Arial", 11))
+            painter.setPen(QColor(60, 60, 60))
+            
+            if telemetry:
+                # Format telemetry data
+                telem_items = [
+                    ("Battery", f"{telemetry.get('battery', '--')}%"),
+                    ("Altitude (ToF)", f"{telemetry.get('tof', '--')} cm"),
+                    ("Barometer", f"{telemetry.get('barometer', '--')} cm"),
+                    ("Temperature", f"{telemetry.get('temperature_low', '--')}-{telemetry.get('temperature_high', '--')}°C"),
+                    ("Attitude", f"P:{telemetry.get('pitch', 0)}° R:{telemetry.get('roll', 0)}° Y:{telemetry.get('yaw', 0)}°"),
+                    ("Velocity", f"X:{telemetry.get('velocity_x', 0)} Y:{telemetry.get('velocity_y', 0)} Z:{telemetry.get('velocity_z', 0)} cm/s"),
+                    ("Flight Time", f"{telemetry.get('flight_time', 0)} seconds"),
+                ]
+                
+                for label, value in telem_items:
+                    painter.drawText(70, y_pos, f"{label}: {value}")
+                    y_pos += 25
+            else:
+                painter.drawText(70, y_pos, "No telemetry data available")
+            
+            # Footer
+            painter.setFont(QFont("Arial", 9))
+            painter.setPen(QColor(150, 150, 150))
+            painter.drawText(50, int(page_rect.height()) - 30, 
+                           "Generated by Tello Drone Control Center")
+            
+        finally:
+            painter.end()
+        
+        QMessageBox.information(self, "Export Success", 
+            f"PDF report saved to:\n{filename}")
+    
+    def toggle_recording(self):
+        """Toggle video recording"""
+        if self.is_recording:
+            self.stop_recording()
+        else:
+            self.start_recording()
+    
+    def start_recording(self):
+        """Start video recording"""
+        global cv2
+        
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = os.path.join(self.downloads_path, f"tello_flight_{timestamp}.mp4")
+            
+            # Get frame size from current frame
+            pixmap = self.get_frame()
+            if pixmap is None or pixmap.isNull():
+                QMessageBox.warning(self, "Record Error", "No video frame available.")
+                self.record_btn.setChecked(False)
+                return
+            
+            width = pixmap.width()
+            height = pixmap.height()
+            
+            # Initialize video writer
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            self.video_writer = cv2.VideoWriter(filename, fourcc, 10.0, (width, height))
+            
+            if not self.video_writer.isOpened():
+                QMessageBox.warning(self, "Record Error", "Failed to create video file.")
+                self.record_btn.setChecked(False)
+                return
+            
+            self.is_recording = True
+            self.record_start_time = datetime.now()
+            self.record_filename = filename
+            self.record_btn.setText("Stop")
+            self.record_time_label.setStyleSheet("color: #F44336; font-size: 11px; font-weight: bold;")
+            
+            # Start recording timer (10 FPS)
+            self.record_timer.start(100)
+            
+            print(f"Recording started: {filename}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Record Error", f"Failed to start recording: {str(e)}")
+            self.record_btn.setChecked(False)
+    
+    def write_frame(self):
+        """Write current frame to video"""
+        global cv2
+        
+        if not self.is_recording or self.video_writer is None:
+            return
+        
+        try:
+            # Update recording time
+            elapsed = (datetime.now() - self.record_start_time).total_seconds()
+            mins = int(elapsed // 60)
+            secs = int(elapsed % 60)
+            self.record_time_label.setText(f"{mins:02d}:{secs:02d}")
+            
+            # Get current frame
+            pixmap = self.get_frame()
+            if pixmap is None or pixmap.isNull():
+                return
+            
+            # Convert QPixmap to cv2 image
+            qimage = pixmap.toImage().convertToFormat(QImage.Format_RGB888)
+            width = qimage.width()
+            height = qimage.height()
+            ptr = qimage.bits()
+            ptr.setsize(height * width * 3)
+            arr = np.array(ptr).reshape(height, width, 3)
+            
+            # Convert RGB to BGR for OpenCV
+            bgr_frame = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+            
+            # Write frame
+            self.video_writer.write(bgr_frame)
+            
+        except Exception as e:
+            print(f"Error writing frame: {e}")
+    
+    def stop_recording(self):
+        """Stop video recording"""
+        self.is_recording = False
+        self.record_timer.stop()
+        
+        if self.video_writer is not None:
+            self.video_writer.release()
+            self.video_writer = None
+            
+            QMessageBox.information(self, "Recording Saved", 
+                f"Video saved to:\n{self.record_filename}")
+        
+        self.record_btn.setText("Record")
+        self.record_btn.setChecked(False)
+        self.record_time_label.setText("00:00")
+        self.record_time_label.setStyleSheet("color: #888; font-size: 11px; font-weight: bold;")
+        
+        print("Recording stopped")
+    
+    def cleanup(self):
+        """Cleanup resources"""
+        if self.is_recording:
+            self.stop_recording()
+
+
 class MainWindow(QMainWindow):
     """Main application window"""
     
@@ -1740,7 +2101,7 @@ class MainWindow(QMainWindow):
         # Connect signals from signal emitter
         self.signal_emitter.image_signal.connect(self.update_video)
         # Webcam frames (local laptop camera) - for gesture widget when not in gesture mode
-        self.signal_emitter.webcam_image_signal.connect(self.update_webcam)
+        # self.signal_emitter.webcam_image_signal.connect(self.update_webcam)
         self.signal_emitter.flight_data_signal.connect(self.update_telemetry)
         self.signal_emitter.gesture_status_signal.connect(self.update_gesture)
         
@@ -1864,6 +2225,38 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.gesture_control, "Gesture Mode")
         
         right_layout.addWidget(self.tab_widget)
+        
+        # Add stretch to push export widget to bottom
+        right_layout.addStretch()
+        
+        # Export/Record widget at bottom
+        export_group = QGroupBox("Export & Record")
+        export_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                color: #888;
+                border: 1px solid #333;
+                border-radius: 5px;
+                margin-top: 8px;
+                padding-top: 8px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+        """)
+        export_layout = QVBoxLayout()
+        export_layout.setContentsMargins(4, 4, 4, 4)
+        
+        self.export_widget = ExportRecordWidget(
+            self.get_drone_frame_with_overlay,
+            self.get_current_telemetry
+        )
+        export_layout.addWidget(self.export_widget)
+        export_group.setLayout(export_layout)
+        right_layout.addWidget(export_group)
+        
         right_panel.setLayout(right_layout)
         right_panel.setMaximumWidth(450)
         
@@ -1881,6 +2274,25 @@ class MainWindow(QMainWindow):
         except Exception:
             self.webcam_thread = None
         
+    def get_drone_frame_with_overlay(self):
+        """Get current drone video frame with all overlays as QPixmap."""
+        try:
+            if hasattr(self.drone_video_widget, '_last_pixmap') and self.drone_video_widget._last_pixmap:
+                # Return the overlayed version
+                return self.drone_video_widget._draw_overlay_on(self.drone_video_widget._last_pixmap)
+            return None
+        except Exception:
+            return None
+    
+    def get_current_telemetry(self):
+        """Get current telemetry data as dict."""
+        try:
+            if hasattr(self.ros_node, 'current_flight_data'):
+                return self.ros_node.current_flight_data
+            return None
+        except Exception:
+            return None
+    
     def update_video(self, cv_image):
         """Update drone video display with annotations."""
         try:
@@ -2031,6 +2443,13 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Handle window close"""
         print("Shutting down...")
+        
+        # Cleanup export widget (stop recording if active)
+        try:
+            if hasattr(self, 'export_widget'):
+                self.export_widget.cleanup()
+        except Exception:
+            pass
         
         try:
             if getattr(self, 'webcam_thread', None) is not None:
