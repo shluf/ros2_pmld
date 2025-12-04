@@ -4,6 +4,8 @@ import sys
 import tty
 import termios
 import threading
+import select
+import time
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
@@ -40,6 +42,17 @@ class KeyboardController(Node):
         self.namespace = ns
         self.last_key = None  # For flip confirmation
         
+        # Track pressed keys untuk smooth movement
+        self.active_keys = set()
+        
+        # Key timeout - jika tidak ada input dalam waktu ini, stop
+        self.key_timeout = 2.0  # 2000ms
+        self.last_key_time = 0.0
+        
+        # Key repeat tracking untuk stabilitas
+        self.key_last_seen = {}  # key -> timestamp terakhir ditekan
+        self.key_release_delay = 0.15  # delay sebelum key dianggap dilepas (150ms)
+        
         self.get_logger().info(f'Keyboard controller started on topic: {topic}')
         self.get_logger().info(f'Service client: {service_name}')
         self.get_logger().info(f'Speed: {self.speed}, Yaw speed: {self.yaw_speed}')
@@ -49,7 +62,7 @@ class KeyboardController(Node):
         print("\n" + "="*50)
         print("TELLO KEYBOARD CONTROLLER")
         print("="*50)
-        print("MOVEMENT:")
+        print("MOVEMENT (tahan untuk bergerak terus):")
         print("  W/S : Maju/Mundur")
         print("  A/D : Kiri/Kanan")
         print("  Q/E : Yaw kiri/kanan")
@@ -76,103 +89,149 @@ class KeyboardController(Node):
         
     def publish_twist(self):
         """Publish Twist message secara periodik"""
-        if self.running:
-            self.publisher.publish(self.twist)
+        if not self.running:
+            return
+            
+        current_time = time.time()
+        
+        # Check key release dengan delay untuk stabilitas
+        # Ini mencegah flicker saat keyboard auto-repeat
+        keys_to_remove = []
+        for key in list(self.active_keys):
+            if key in self.key_last_seen:
+                time_since_last = current_time - self.key_last_seen[key]
+                if time_since_last > self.key_release_delay:
+                    keys_to_remove.append(key)
+        
+        if keys_to_remove:
+            for key in keys_to_remove:
+                self.active_keys.discard(key)
+                if key in self.key_last_seen:
+                    del self.key_last_seen[key]
+            self.update_twist_from_active_keys()
+            
+        # Check timeout - jika tidak ada input dalam key_timeout, stop movement
+        if self.last_key_time > 0 and (current_time - self.last_key_time) > self.key_timeout:
+            # Timeout - clear active keys dan stop
+            if self.active_keys:
+                self.active_keys.clear()
+                self.key_last_seen.clear()
+                self.update_twist_from_active_keys()
+        
+        self.publisher.publish(self.twist)
     
-    def update_twist(self, key):
-        """Update twist berdasarkan input keyboard"""
-        # Reset semua ke 0 dulu
+    def update_twist_from_active_keys(self):
+        """Update twist berdasarkan active keys yang sedang ditekan"""
+        # Reset twist
         self.twist.linear.x = 0.0
         self.twist.linear.y = 0.0
         self.twist.linear.z = 0.0
         self.twist.angular.z = 0.0
         
-        # Update berdasarkan key
-        if key == 'w':
-            self.twist.linear.x = self.speed
-            # self.get_logger().info('Maju')
-        elif key == 's':
-            self.twist.linear.x = -self.speed
-            # self.get_logger().info('Mundur')
-        elif key == 'a':
-            self.twist.linear.y = self.speed
-            # self.get_logger().info('Kiri')
-        elif key == 'd':
-            self.twist.linear.y = -self.speed
-            # self.get_logger().info('Kanan')
-        elif key == 'i':
-            self.twist.linear.z = self.speed
-            # self.get_logger().info('Naik')
-        elif key == 'k':
-            self.twist.linear.z = -self.speed
-            # self.get_logger().info('Turun')
-        elif key == 'q':
-            self.twist.angular.z = self.yaw_speed
-            # self.get_logger().info('Yaw kiri')
-        elif key == 'e':
-            self.twist.angular.z = -self.yaw_speed
-            # self.get_logger().info('Yaw kanan')
+        # Apply velocity berdasarkan active keys
+        if 'w' in self.active_keys:
+            self.twist.linear.x += self.speed
+        if 's' in self.active_keys:
+            self.twist.linear.x -= self.speed
+        if 'a' in self.active_keys:
+            self.twist.linear.y += self.speed
+        if 'd' in self.active_keys:
+            self.twist.linear.y -= self.speed
+        if 'i' in self.active_keys:
+            self.twist.linear.z += self.speed
+        if 'k' in self.active_keys:
+            self.twist.linear.z -= self.speed
+        if 'q' in self.active_keys:
+            self.twist.angular.z += self.yaw_speed
+        if 'e' in self.active_keys:
+            self.twist.angular.z -= self.yaw_speed
+    
+    def process_key(self, key):
+        """Process keyboard input"""
+        key = key.lower()
+        current_time = time.time()
+        self.last_key_time = current_time
+        
+        # Movement keys - add/update in active_keys
+        movement_keys = {'w', 's', 'a', 'd', 'i', 'k', 'q', 'e'}
+        
+        if key in movement_keys:
+            self.active_keys.add(key)
+            self.key_last_seen[key] = current_time  # Update timestamp
+            self.update_twist_from_active_keys()
+            # Reset flip confirmation
+            if key not in ['f', 'b', 'r', 'v']:
+                self.last_key = None
+                
+        elif key == ' ':
+            # Spacebar = stop/hover - clear all movement
+            self.active_keys.clear()
+            self.key_last_seen.clear()
+            self.update_twist_from_active_keys()
+            self.last_key = None
+            self.get_logger().info('Stop/Hover')
+            
         elif key == 't':
-            # self.get_logger().info('Takeoff command...')
             self.call_tello_action('takeoff')
+            self.last_key = None
+            
         elif key == 'l':
-            # self.get_logger().info('Land command...')
             self.call_tello_action('land')
+            self.last_key = None
+            
         elif key == 'h':
-            # self.get_logger().warn('EMERGENCY STOP!')
+            self.active_keys.clear()
+            self.key_last_seen.clear()
+            self.update_twist_from_active_keys()
             self.call_tello_action('emergency')
+            self.get_logger().warn('EMERGENCY STOP!')
+            self.last_key = None
+            
         elif key == 'f':
-            # Flip forward (requires double press)
             if self.last_key == 'f':
-                # self.get_logger().info('Flip forward!')
                 self.call_tello_action('flip f')
                 self.last_key = None
             else:
-                # self.get_logger().info('Press F again to confirm flip forward')
+                self.get_logger().info('Press F again to confirm flip forward')
                 self.last_key = 'f'
+                
         elif key == 'b':
-            # Flip backward
             if self.last_key == 'b':
-                # self.get_logger().info('Flip backward!')
                 self.call_tello_action('flip b')
                 self.last_key = None
             else:
-                # self.get_logger().info('Press B again to confirm flip backward')
+                self.get_logger().info('Press B again to confirm flip backward')
                 self.last_key = 'b'
+                
         elif key == 'r':
-            # Flip right
             if self.last_key == 'r':
-                # self.get_logger().info('Flip right!')
                 self.call_tello_action('flip r')
                 self.last_key = None
             else:
-                # self.get_logger().info('Press R again to confirm flip right')
+                self.get_logger().info('Press R again to confirm flip right')
                 self.last_key = 'r'
+                
         elif key == 'v':
-            # Flip left
             if self.last_key == 'v':
-                # self.get_logger().info('Flip left!')
                 self.call_tello_action('flip l')
                 self.last_key = None
             else:
-                # self.get_logger().info('Press V again to confirm flip left')
+                self.get_logger().info('Press V again to confirm flip left')
                 self.last_key = 'v'
+                
         elif key == '+' or key == '=':
             self.speed = min(1.0, self.speed + 0.1)
             self.yaw_speed = min(1.0, self.yaw_speed + 0.1)
-            # self.get_logger().info(f'Speed increased: {self.speed:.1f}')
+            self.get_logger().info(f'Speed increased: {self.speed:.1f}')
+            # Update twist dengan speed baru
+            self.update_twist_from_active_keys()
+            
         elif key == '-' or key == '_':
             self.speed = max(0.1, self.speed - 0.1)
             self.yaw_speed = max(0.1, self.yaw_speed - 0.1)
-            # self.get_logger().info(f'Speed decreased: {self.speed:.1f}')
-        elif key == ' ':
-            # Spacebar = stop/hover
-            #self.get_logger().info('Stop/Hover')
-            self.last_key = None
-        else:
-            # Reset last_key for non-flip keys
-            if key not in ['f', 'b', 'r', 'v']:
-                self.last_key = None
+            self.get_logger().info(f'Speed decreased: {self.speed:.1f}')
+            # Update twist dengan speed baru
+            self.update_twist_from_active_keys()
     
     def call_tello_action(self, command):
         """Call tello_action service"""
@@ -203,19 +262,26 @@ class KeyboardController(Node):
         
     def stop(self):
         self.running = False
+        self.active_keys.clear()
+        self.key_last_seen.clear()
         self.twist = Twist()  # Reset to zero
         self.publisher.publish(self.twist)
 
 
-def get_key():
+def get_key_nonblocking(timeout=0.1):
+    """Non-blocking keyboard read dengan timeout"""
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
     try:
         tty.setraw(sys.stdin.fileno())
-        ch = sys.stdin.read(1)
+        # Use select untuk non-blocking read dengan timeout
+        rlist, _, _ = select.select([sys.stdin], [], [], timeout)
+        if rlist:
+            ch = sys.stdin.read(1)
+            return ch
+        return None
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    return ch
 
 
 def main(args=None):
@@ -228,14 +294,16 @@ def main(args=None):
     
     try:
         while controller.running:
-            key = get_key()
+            # Non-blocking read dengan timeout pendek
+            key = get_key_nonblocking(timeout=0.05)
             
-            # ESC atau Ctrl+C untuk keluar
-            if key == '\x1b' or key == '\x03':
-                print("\nKeluar...")
-                break
-            
-            controller.update_twist(key.lower())
+            if key is not None:
+                # ESC atau Ctrl+C untuk keluar
+                if key == '\x1b' or key == '\x03':
+                    print("\nKeluar...")
+                    break
+                
+                controller.process_key(key)
             
     except KeyboardInterrupt:
         print("\nKeyboard Interrupt")

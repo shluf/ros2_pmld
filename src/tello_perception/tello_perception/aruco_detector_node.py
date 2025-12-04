@@ -9,7 +9,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseArray, Pose, Point, Quaternion
-from std_msgs.msg import Header
+from std_msgs.msg import Header, Int32MultiArray
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
@@ -91,6 +91,13 @@ class ArucoDetectorNode(Node):
             '/aruco_poses',
             qos_reliable
         )
+        
+        # Publish marker IDs separately for GUI display
+        self.ids_pub = self.create_publisher(
+            Int32MultiArray,
+            '/aruco_ids',
+            qos_reliable
+        )
 
         if self.publish_annotated:
             self.annotated_pub = self.create_publisher(
@@ -167,6 +174,12 @@ class ArucoDetectorNode(Node):
 
             # Publish poses
             self.pose_pub.publish(pose_array)
+            
+            # Publish marker IDs
+            ids_msg = Int32MultiArray()
+            if ids is not None and len(ids) > 0:
+                ids_msg.data = ids.flatten().tolist()
+            self.ids_pub.publish(ids_msg)
 
             # Publish annotated image if enabled
             if self.publish_annotated:

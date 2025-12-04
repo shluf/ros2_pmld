@@ -21,6 +21,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetControlMode.srv"
   "srv/SetGestureCamera.srv"
   "srv/SetNodeActive.srv"
+  "srv/SetMirror.srv"
   DEPENDENCIES std_msgs geometry_msgs
 )
 

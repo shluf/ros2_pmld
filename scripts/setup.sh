@@ -19,7 +19,7 @@ sudo apt install -y \
 
 echo ""
 echo "Installing Python packages..."
-pip3 install mediapipe tflite-runtime ultralytics
+pip3 install mediapipe tflite-runtime ultralytics qtawesome
 
 # echo ""
 # echo "Fixing Python build dependencies..."

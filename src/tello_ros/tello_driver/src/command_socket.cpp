@@ -41,8 +41,16 @@ namespace tello_driver
 
     if (!waiting_) {
       RCLCPP_DEBUG(driver_->get_logger(), "Sending '%s'...", command.c_str());
-      socket_.send_to(asio::buffer(command), remote_endpoint_);
-      send_time_ = driver_->now();
+      try {
+        socket_.send_to(asio::buffer(command), remote_endpoint_);
+        send_time_ = driver_->now();
+      } catch (const std::exception &e) {
+        RCLCPP_ERROR(driver_->get_logger(), "Failed to send command '%s': %s", command.c_str(), e.what());
+        // mark not waiting and clear receiving so reconnect logic can run
+        waiting_ = false;
+        receiving_ = false;
+        return;
+      }
 
       // Wait for a response for all commands except "rc"
       if (command.rfind("rc", 0) != 0) {

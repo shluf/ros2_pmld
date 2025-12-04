@@ -17,7 +17,13 @@ setup(
         # Config files
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'PyQt5',
+        'qtawesome',
+        'numpy',
+        'opencv-python',
+    ],
     zip_safe=True,
     maintainer='shluf',
     maintainer_email='luthfisalis09@gmail.com',
@@ -30,7 +36,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'tello_gui = tello_control_gui.tello_control_gui:main',
+            'tello_gui = tello_control_gui.main:main',
         ],
     },
 )

@@ -81,6 +81,7 @@ def generate_launch_description():
                 output='screen',
                 parameters=[
                     {'use_drone_camera': True},
+                    {'gesture_hold_time': 0.1},
                     {'debug_mode': False},
                     {'webcam_id': 0},
                 ]

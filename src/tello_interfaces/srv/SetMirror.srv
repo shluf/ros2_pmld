@@ -1,0 +1,15 @@
+# Request to toggle video mirror mode
+
+# True to enable mirror (horizontal flip), False to disable
+bool mirror
+
+---
+
+# True if the operation was successful
+bool success
+
+# Current mirror state after operation
+bool current_state
+
+# Additional message for the caller
+string message

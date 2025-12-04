@@ -95,7 +95,7 @@ class TrackingControllerNode(Node):
         
         self.declare_parameter('max_linear_velocity', 0.5)
         self.declare_parameter('max_angular_velocity', 0.5)
-        self.declare_parameter('target_class', 'person')
+        self.declare_parameter('target_class', ['person'])  # Can be string or list
         self.declare_parameter('deadzone_pixels', 50)
         self.declare_parameter('max_tracking_distance', 3.0)
         self.declare_parameter('frame_width', 960)
@@ -120,7 +120,14 @@ class TrackingControllerNode(Node):
         
         self.max_linear_vel = self.get_parameter('max_linear_velocity').value
         self.max_angular_vel = self.get_parameter('max_angular_velocity').value
-        self.target_class = self.get_parameter('target_class').value
+        
+        # Handle target_class - can be string or list of strings
+        target_class_param = self.get_parameter('target_class').value
+        if isinstance(target_class_param, list):
+            self.target_classes = target_class_param
+        else:
+            self.target_classes = [target_class_param] if target_class_param else []
+        
         self.deadzone = self.get_parameter('deadzone_pixels').value
         self.max_distance = self.get_parameter('max_tracking_distance').value
         self.frame_width = self.get_parameter('frame_width').value
@@ -217,7 +224,7 @@ class TrackingControllerNode(Node):
         self.control_timer = self.create_timer(0.05, self.control_loop)  # 20 Hz
 
         self.get_logger().info('Tracking Controller initialized')
-        self.get_logger().info(f'Target class: {self.target_class if self.target_class else "closest to center"}')
+        self.get_logger().info(f'Target classes: {self.target_classes if self.target_classes else "closest to center"}')
         self.get_logger().info(f'PID gains - X: {pid_x_kp}/{pid_x_ki}/{pid_x_kd}')
         self.get_logger().info(f'Deadzone: {self.deadzone}px, Max distance: {self.max_distance}m')
 
@@ -292,7 +299,9 @@ class TrackingControllerNode(Node):
                 return
 
         # Calculate errors from frame center
-        error_x = target.center_x - self.frame_center_x  # Left-right
+        # Note: error_x is negated because when target is to the right (positive error),
+        # drone should move right (negative linear.y in drone frame)
+        error_x = -(target.center_x - self.frame_center_x)  # Left-right (inverted for correct tracking)
         error_y = self.frame_center_y - target.center_y  # Up-down (inverted)
         
         # For forward-backward, use bbox size as proxy for distance
@@ -376,12 +385,12 @@ class TrackingControllerNode(Node):
         """Select target from detections.
         
         Priority:
-        1. If target_class specified, find that class
+        1. If target_classes specified, find any of those classes
         2. Otherwise, find detection closest to frame center
         """
-        if self.target_class:
-            # Find specific class
-            candidates = [d for d in detections if d.class_name == self.target_class]
+        if self.target_classes:
+            # Find any of the specified classes
+            candidates = [d for d in detections if d.class_name in self.target_classes]
             if not candidates:
                 return None
             # If multiple, choose closest to center
