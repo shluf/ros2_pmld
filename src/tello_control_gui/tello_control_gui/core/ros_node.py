@@ -334,7 +334,7 @@ class TelloControlNode(Node):
     def tracking_callback(self, msg):
         """Callback untuk tracking command."""
         data = {
-            'linear': {'x': msg.linear.x, 'y': msg.linear.y},
+            'linear': {'x': msg.linear.x, 'y': msg.linear.y, 'z': msg.linear.z},
             'angular': {'z': msg.angular.z}
         }
         self.signals.tracking_signal.emit(data)

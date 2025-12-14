@@ -240,7 +240,7 @@ class GestureControlNode(Node):
         self.execute_command(command, hand_position)
 
     def execute_command(self, command, hand_position):
-        self.get_loger().warn(f'Gesture received: {command}')
+        self.get_logger().info(f'Gesture received: {command}')
         
         if command == 'takeoff':
             self.send_takeoff()
