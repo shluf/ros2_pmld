@@ -151,21 +151,6 @@ class DistanceEstimatorNode(Node):
         if self.latest_detections is None or self.latest_aruco_poses is None:
             return
 
-        if len(self.latest_detections.detections) == 0:
-            # No detections, publish empty array
-            distance_array = ObjectDistanceArray()
-            distance_array.header = self.latest_detections.header
-            self.distance_pub.publish(distance_array)
-            return
-
-        if len(self.latest_aruco_poses.poses) == 0:
-            self.get_logger().warn('No ArUco markers detected, cannot estimate distances')
-            return
-
-        # Create distance array message
-        distance_array = ObjectDistanceArray()
-        distance_array.header = self.latest_detections.header
-        
         # Prepare visualization if image is available
         annotated_img = None
         if self.latest_image is not None:
@@ -173,6 +158,45 @@ class DistanceEstimatorNode(Node):
                 annotated_img = self.bridge.imgmsg_to_cv2(self.latest_image, 'bgr8')
             except Exception as e:
                 self.get_logger().warn(f'CV Bridge error: {e}')
+
+        # No ArUco markers detected - publish empty and clear visualization
+        if len(self.latest_aruco_poses.poses) == 0:
+            self.get_logger().debug('No ArUco markers detected, clearing distance display')
+            
+            # Publish empty distance array
+            distance_array = ObjectDistanceArray()
+            distance_array.header = self.latest_detections.header
+            self.distance_pub.publish(distance_array)
+            
+            # Publish clean image (without distance annotations)
+            if annotated_img is not None:
+                try:
+                    msg = self.bridge.cv2_to_imgmsg(annotated_img, 'bgr8')
+                    msg.header = self.latest_detections.header
+                    self.annotated_pub.publish(msg)
+                except Exception as e:
+                    self.get_logger().warn(f'Error publishing clean image: {e}')
+            return
+
+        if len(self.latest_detections.detections) == 0:
+            # No detections, publish empty array but still show marker info
+            distance_array = ObjectDistanceArray()
+            distance_array.header = self.latest_detections.header
+            self.distance_pub.publish(distance_array)
+            
+            # Publish clean image
+            if annotated_img is not None:
+                try:
+                    msg = self.bridge.cv2_to_imgmsg(annotated_img, 'bgr8')
+                    msg.header = self.latest_detections.header
+                    self.annotated_pub.publish(msg)
+                except Exception as e:
+                    self.get_logger().warn(f'Error publishing image: {e}')
+            return
+
+        # Create distance array message
+        distance_array = ObjectDistanceArray()
+        distance_array.header = self.latest_detections.header
 
         # For each detected object, calculate distance to nearest marker
         for obj_idx, detection in enumerate(self.latest_detections.detections):

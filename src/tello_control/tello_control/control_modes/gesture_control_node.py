@@ -122,9 +122,15 @@ class GestureControlNode(Node):
     
     def mode_callback(self, msg):
         if CONTROL_MODE_AVAILABLE:
+            old_mode = self.current_mode
             self.current_mode = msg.mode
             self.transitioning = msg.transitioning
             self.gesture_mode_active = (msg.mode == 'gesture' and not msg.transitioning)
+            
+            if old_mode != msg.mode:
+                self.get_logger().info(
+                    f'Mode changed: {old_mode} -> {msg.mode}, gesture_active={self.gesture_mode_active}'
+                )
     
     def flight_data_callback(self, msg):
         self.is_flying = msg.h > 10
@@ -160,7 +166,11 @@ class GestureControlNode(Node):
             self.velocity_settings = {'linear_speed': 0.5, 'angular_speed': 0.5, 'vertical_speed': 0.3}
 
     def gesture_callback(self, msg):
+        # Log untuk debugging
         if CONTROL_MODE_AVAILABLE and not self.gesture_mode_active:
+            self.get_logger().debug(
+                f'Gesture ignored: mode={self.current_mode}, gesture_mode_active={self.gesture_mode_active}'
+            )
             return
 
         try:
@@ -169,6 +179,7 @@ class GestureControlNode(Node):
             finger_gesture = data.get('finger_gesture')
             hand_position = data.get('hand_position')
             
+            self.get_logger().debug(f'Received gesture: hand_sign={hand_sign}, finger_gesture={finger_gesture}')
             self.process_gesture_data(hand_sign, finger_gesture, hand_position)
         except Exception as e:
             self.get_logger().error(f'Error parsing gesture data: {e}')

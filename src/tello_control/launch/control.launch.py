@@ -63,6 +63,9 @@ def generate_launch_description():
             'target_class': ['person', 'bottle', 'backpack'],
             'deadzone_pixels': 50,
             'max_tracking_distance': 3.0,
+            'min_tracking_distance': 0.5,
+            'target_distance': 1.5,
+            'use_distance_control': True,
             'frame_width': 960,
             'frame_height': 720
         }]
@@ -79,11 +82,24 @@ def generate_launch_description():
         }]
     )
 
+    gesture_control = Node(
+        package='tello_control',
+        executable='gesture_control_node',
+        name='gesture_control',
+        output='screen',
+        parameters=[{
+            'enable_safety': True,
+            'gesture_hold_time': 0.5,
+            'no_gesture_timeout': 0.5
+        }]
+    )
+
     return LaunchDescription([
         initial_mode_arg,
         hover_duration_arg,
         
         mode_manager,
         tracking_controller,
-        control_arbitrator
+        control_arbitrator,
+        gesture_control
     ])

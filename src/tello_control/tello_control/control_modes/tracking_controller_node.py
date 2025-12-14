@@ -98,6 +98,9 @@ class TrackingControllerNode(Node):
         self.declare_parameter('target_class', ['person'])  # Can be string or list
         self.declare_parameter('deadzone_pixels', 50)
         self.declare_parameter('max_tracking_distance', 3.0)
+        self.declare_parameter('min_tracking_distance', 0.5)  # Minimum distance to maintain
+        self.declare_parameter('target_distance', 1.5)  # Desired distance from target in meters
+        self.declare_parameter('use_distance_control', True)  # Use ArUco distance for depth control
         self.declare_parameter('frame_width', 960)
         self.declare_parameter('frame_height', 720)
 
@@ -130,6 +133,9 @@ class TrackingControllerNode(Node):
         
         self.deadzone = self.get_parameter('deadzone_pixels').value
         self.max_distance = self.get_parameter('max_tracking_distance').value
+        self.min_distance = self.get_parameter('min_tracking_distance').value
+        self.target_distance = self.get_parameter('target_distance').value
+        self.use_distance_control = self.get_parameter('use_distance_control').value
         self.frame_width = self.get_parameter('frame_width').value
         self.frame_height = self.get_parameter('frame_height').value
 
@@ -226,7 +232,9 @@ class TrackingControllerNode(Node):
         self.get_logger().info('Tracking Controller initialized')
         self.get_logger().info(f'Target classes: {self.target_classes if self.target_classes else "closest to center"}')
         self.get_logger().info(f'PID gains - X: {pid_x_kp}/{pid_x_ki}/{pid_x_kd}')
-        self.get_logger().info(f'Deadzone: {self.deadzone}px, Max distance: {self.max_distance}m')
+        self.get_logger().info(f'Deadzone: {self.deadzone}px')
+        self.get_logger().info(f'Distance control: {"enabled" if self.use_distance_control else "disabled (using bbox)"}'
+                               f', target={self.target_distance}m, range=[{self.min_distance}-{self.max_distance}]m')
 
     def set_active_callback(self, request, response):
         """Handle node active/pause service requests."""
@@ -291,12 +299,18 @@ class TrackingControllerNode(Node):
             return
 
         # Check distance if available
+        target_distance = None
         if self.latest_distances is not None:
             target_distance = self.get_target_distance(target)
-            if target_distance is not None and target_distance > self.max_distance:
-                self.get_logger().warn(f'Target too far ({target_distance:.2f}m) - stopping')
-                self.send_stop_command()
-                return
+            if target_distance is not None:
+                # Check if target is too far
+                if target_distance > self.max_distance:
+                    self.get_logger().warn(f'Target too far ({target_distance:.2f}m > {self.max_distance}m) - stopping')
+                    self.send_stop_command()
+                    return
+                # Check if target is too close
+                if target_distance < self.min_distance:
+                    self.get_logger().warn(f'Target too close ({target_distance:.2f}m < {self.min_distance}m) - backing up')
 
         # Calculate errors from frame center
         # Note: error_x is negated because when target is to the right (positive error),
@@ -304,11 +318,20 @@ class TrackingControllerNode(Node):
         error_x = -(target.center_x - self.frame_center_x)  # Left-right (inverted for correct tracking)
         error_y = self.frame_center_y - target.center_y  # Up-down (inverted)
         
-        # For forward-backward, use bbox size as proxy for distance
-        # Larger bbox = closer = move back, smaller = farther = move forward
-        target_bbox_height = target.height
-        desired_bbox_height = self.frame_height * 0.3  # Target: object fills 30% of frame
-        error_depth = desired_bbox_height - target_bbox_height
+        # Forward-backward control: prioritize distance measurement if available
+        if self.use_distance_control and target_distance is not None:
+            # Use actual distance measurement from ArUco
+            # error_depth > 0 → target far → move forward
+            # error_depth < 0 → target close → move backward
+            error_depth = (target_distance - self.target_distance) * 100  # Scale to reasonable range
+            depth_source = "distance"
+        else:
+            # Fallback: use bbox size as proxy for distance
+            # Larger bbox = closer = move back, smaller = farther = move forward
+            target_bbox_height = target.height
+            desired_bbox_height = self.frame_height * 0.3  # Target: object fills 30% of frame
+            error_depth = desired_bbox_height - target_bbox_height
+            depth_source = "bbox"
 
         # Apply deadzone
         if abs(error_x) < self.deadzone:
@@ -358,6 +381,13 @@ class TrackingControllerNode(Node):
                 cv2.putText(annotated_img, info_text, (10, 30), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 
+                # Draw depth control source
+                depth_info = f"Depth: {depth_source}"
+                if target_distance is not None:
+                    depth_info += f" ({target_distance:.2f}m -> {self.target_distance:.2f}m)"
+                cv2.putText(annotated_img, depth_info, (10, 60),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                
                 # Draw target info
                 target_text = f"Target: {target.class_name} ({target.confidence:.2f})"
                 cv2.putText(annotated_img, target_text, (x, y-10),
@@ -377,7 +407,7 @@ class TrackingControllerNode(Node):
 
         self.get_logger().debug(
             f'Target: {target.class_name} @ ({target.center_x:.0f}, {target.center_y:.0f}) '
-            f'| Errors: x={error_x:.0f}, y={error_y:.0f}, depth={error_depth:.0f} '
+            f'| Errors: x={error_x:.0f}, y={error_y:.0f}, depth={error_depth:.0f} ({depth_source}) '
             f'| Cmd: fb={cmd_fb:.2f}, lr={cmd_lr:.2f}, ud={cmd_ud:.2f}'
         )
 
