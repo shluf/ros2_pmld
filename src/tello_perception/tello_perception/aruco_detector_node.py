@@ -139,26 +139,44 @@ class ArucoDetectorNode(Node):
             pose_array = PoseArray()
             pose_array.header = msg.header
 
+            # Store rvecs/tvecs for annotation
+            rvecs = []
+            tvecs = []
+            
             if ids is not None and len(ids) > 0:
-                # Estimate pose for each marker
-                rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
-                    corners,
-                    self.marker_size,
-                    self.camera_matrix,
-                    self.dist_coeffs
-                )
+                # Estimate pose for each marker using solvePnP (OpenCV 4.7+ compatible)
+                obj_points = np.array([
+                    [-self.marker_size / 2, self.marker_size / 2, 0],
+                    [self.marker_size / 2, self.marker_size / 2, 0],
+                    [self.marker_size / 2, -self.marker_size / 2, 0],
+                    [-self.marker_size / 2, -self.marker_size / 2, 0]
+                ], dtype=np.float32)
 
                 for i, marker_id in enumerate(ids):
+                    # Estimate pose using solvePnP
+                    success, rvec, tvec = cv2.solvePnP(
+                        obj_points,
+                        corners[i].reshape(-1, 2),
+                        self.camera_matrix,
+                        self.dist_coeffs
+                    )
+                    
+                    if not success:
+                        continue
+                    
+                    rvecs.append(rvec)
+                    tvecs.append(tvec)
+                    
                     # Create pose message
                     pose = Pose()
                     
                     # Position (translation vector)
-                    pose.position.x = float(tvecs[i][0][0])
-                    pose.position.y = float(tvecs[i][0][1])
-                    pose.position.z = float(tvecs[i][0][2])
+                    pose.position.x = float(tvec[0][0])
+                    pose.position.y = float(tvec[1][0])
+                    pose.position.z = float(tvec[2][0])
 
                     # Orientation (convert rotation vector to quaternion)
-                    rot_matrix, _ = cv2.Rodrigues(rvecs[i])
+                    rot_matrix, _ = cv2.Rodrigues(rvec)
                     quat = self.rotation_matrix_to_quaternion(rot_matrix)
                     pose.orientation.x = quat[0]
                     pose.orientation.y = quat[1]
@@ -184,12 +202,12 @@ class ArucoDetectorNode(Node):
             # Publish annotated image if enabled
             if self.publish_annotated:
                 annotated_frame = cv_image.copy()
-                if ids is not None and len(ids) > 0:
+                if ids is not None and len(ids) > 0 and len(rvecs) > 0:
                     # Draw detected markers
                     cv2.aruco.drawDetectedMarkers(annotated_frame, corners, ids)
                     
                     # Draw axes for each marker
-                    for i in range(len(ids)):
+                    for i in range(len(rvecs)):
                         cv2.drawFrameAxes(
                             annotated_frame,
                             self.camera_matrix,
