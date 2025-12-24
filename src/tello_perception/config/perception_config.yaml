@@ -1,0 +1,27 @@
+# Tello Perception Configuration
+
+# YOLO Detector Settings
+yolo_detector:
+  model_name: "yolov8n"  # yolov8n, yolov8s, yolov8m, yolov8l, yolov8x
+  confidence_threshold: 0.5
+  device: "cuda"  # "cpu" or "cuda"
+  target_classes: ["person"]  # Empty list = all classes
+  publish_annotated: true
+
+# ArUco Detector Settings
+aruco_detector:
+  marker_size: 0.10  # Marker size in meters (10cm)
+  aruco_dict: "DICT_4X4_50"  # DICT_4X4_50, DICT_5X5_100, etc.
+  publish_annotated: true
+  
+  # Camera calibration (Tello approximate values)
+  camera_matrix: [921.0, 0.0, 480.0,
+                  0.0, 921.0, 360.0,
+                  0.0, 0.0, 1.0]
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+# Distance Estimator Settings
+distance_estimator:
+  marker_size: 0.10  # Must match aruco_detector marker_size
+  max_distance_meters: 5.0
+  min_confidence: 0.3

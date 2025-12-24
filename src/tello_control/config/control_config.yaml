@@ -1,0 +1,51 @@
+# Tello Control Configuration
+
+# Mode Manager Settings
+mode_manager:
+  initial_mode: "manual"  # manual, gesture, tracking
+  hover_duration: 1.0  # Time to hover before mode switch (seconds)
+  camera_source: "drone"  # drone, webcam
+
+# Tracking Controller Settings
+tracking_controller:
+  # PID gains for X-axis (left-right)
+  pid_x:
+    kp: 0.5
+    ki: 0.0
+    kd: 0.1
+  
+  # PID gains for Y-axis (forward-backward)
+  pid_y:
+    kp: 0.5
+    ki: 0.0
+    kd: 0.1
+  
+  # PID gains for Z-axis (up-down)
+  pid_z:
+    kp: 0.4
+    ki: 0.0
+    kd: 0.08
+  
+  # PID gains for yaw (rotation)
+  pid_yaw:
+    kp: 0.3
+    ki: 0.0
+    kd: 0.05
+  
+  # Control limits
+  max_linear_velocity: 0.5  # m/s
+  max_angular_velocity: 0.5  # rad/s
+  
+  # Tracking settings
+  target_class: "person"  # Class to track, empty = track closest to center
+  deadzone_pixels: 50  # Deadzone around frame center
+  max_tracking_distance: 3.0  # Max distance to track (meters)
+  
+  # Frame dimensions
+  frame_width: 960
+  frame_height: 720
+
+# Control Arbitrator Settings
+control_arbitrator:
+  command_timeout: 0.5  # Timeout for cmd_vel commands (seconds)
+  priority_order: ["gesture", "tracking", "manual"]  # Priority when multiple active

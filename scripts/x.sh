@@ -11,22 +11,23 @@ function show_menu() {
     echo ""
     echo "  [SETUP]"
     echo "  1) Build workspace"
+    echo "  2) Clean workspace"
     echo ""
     echo "  [SIMULATION]"
-    echo "  2) Gazebo simulation only"
-    echo "  3) Gesture Control (Gazebo + Debug)"
-    echo "  4) Gesture Control (Gazebo + Production)"
+    echo "  3) Gazebo simulation only"
+    echo "  4) Gesture Control (Gazebo + Debug)"
+    echo "  5) Gesture Control (Gazebo + Production)"
     echo ""
     echo "  [GUI CONTROL]"
-    echo "  5) Tello Control GUI"
+    echo "  6) Tello Control GUI"
     echo ""
     echo "  [REAL DRONE]"
-    echo "  6) Connect to REAL drone"
-    echo "  7) Gesture Control (Real Drone)"
+    echo "  7) Connect to REAL drone"
+    echo "  8) Gesture Control (Real Drone)"
     echo ""
     echo "  0) Exit"
     echo "================================================"
-    read -p "Pilih opsi [0-7]: " choice
+    read -p "Pilih opsi [0-8]: " choice
 }
 
 function build_workspace() {
@@ -35,9 +36,21 @@ function build_workspace() {
     echo "================================================"
     echo ""
     cd "$WORKSPACE"
+    source /opt/ros/humble/setup.bash
     colcon build --symlink-install
     echo ""
     echo "Build complete!"
+}
+
+function clean_workspace() {
+    echo "================================================"
+    echo "            Cleaning Workspace                  "
+    echo "================================================"
+    echo ""
+    cd "$WORKSPACE"
+    echo "Removing build/ install/ log/ directories..."
+    rm -rf build install log
+    echo "Clean complete! You can now build the workspace."
 }
 
 function run_simulation() {
@@ -351,21 +364,24 @@ while true; do
             build_workspace
             ;;
         2)
-            run_simulation
+            clean_workspace
             ;;
         3)
-            run_gesture_control_gazebo_debug
+            run_simulation
             ;;
         4)
-            run_gesture_control_gazebo_prod
+            run_gesture_control_gazebo_debug
             ;;
         5)
-            run_tello_gui
+            run_gesture_control_gazebo_prod
             ;;
         6)
-            connect_tello
+            run_tello_gui
             ;;
         7)
+            connect_tello
+            ;;
+        8)
             run_gesture_control_real
             ;;
         0|q|Q)

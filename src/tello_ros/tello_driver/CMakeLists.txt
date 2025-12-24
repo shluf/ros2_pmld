@@ -40,7 +40,9 @@ find_package(geometry_msgs REQUIRED)
 find_package(ros2_shared REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(tello_msgs REQUIRED)
+find_package(tello_interfaces REQUIRED)
 
 # Package includes not needed for CMake >= 2.8.11
 include_directories(
@@ -76,7 +78,9 @@ set(DRIVER_NODE_DEPS
   ros2_shared
   sensor_msgs
   std_msgs
-  tello_msgs)
+  std_srvs
+  tello_msgs
+  tello_interfaces)
 
 set(DRIVER_NODE_LIBS
   avcodec

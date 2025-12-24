@@ -10,7 +10,6 @@
   <depend>rclpy</depend>
   <depend>tello_driver</depend>
   <depend>tello_msgs</depend>
-  <depend>tello_keyboard</depend>
   <depend>tello_gazebo</depend>
   <depend>tello_description</depend>
   <depend>robot_state_publisher</depend>

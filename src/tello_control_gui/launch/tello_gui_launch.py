@@ -40,8 +40,7 @@ def generate_launch_description():
         output='screen',
         parameters=[
             {'namespace': LaunchConfiguration('namespace')},
-        ],
-        additional_env={'QT_QPA_PLATFORM_PLUGIN_PATH': ''}
+        ]
     )
     
     tello_driver = Node(
@@ -58,15 +57,24 @@ def generate_launch_description():
         ]
     )
     
-    gesture_controller = Node(
+    gesture_detector = Node(
         condition=IfCondition(LaunchConfiguration('with_gesture')),
         package='gesture_control',
-        executable='gesture_controller',
-        name='gesture_controller',
+        executable='gesture_detector_node',
+        name='gesture_detector',
+        output='screen'
+    )
+
+    gesture_control = Node(
+        condition=IfCondition(LaunchConfiguration('with_gesture')),
+        package='tello_control',
+        executable='gesture_control_node',
+        name='gesture_control',
         output='screen',
         parameters=[
             {'namespace': LaunchConfiguration('namespace')},
             {'enable_safety': True},
+            {'config_file': 'config/gesture_mapping.yaml'},
         ]
     )
     
@@ -86,6 +94,7 @@ def generate_launch_description():
         # Nodes
         gui_node,
         tello_driver,
-        gesture_controller,
+        gesture_detector,
+        gesture_control,
         gazebo_sim,
     ])

@@ -7,8 +7,10 @@
 #include "tello_msgs/msg/flight_data.hpp"
 #include "tello_msgs/msg/tello_response.hpp"
 #include "tello_msgs/srv/tello_action.hpp"
+#include "tello_interfaces/srv/set_mirror.hpp"
 
 #include "h264decoder.hpp"
+#include "std_srvs/srv/trigger.hpp"
 
 using asio::ip::udp;
 
@@ -50,6 +52,9 @@ namespace tello_driver
     rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_pub_;
     rclcpp::Publisher<tello_msgs::msg::FlightData>::SharedPtr flight_data_pub_;
     rclcpp::Publisher<tello_msgs::msg::TelloResponse>::SharedPtr tello_response_pub_;
+    
+    // Mirror state (accessible by VideoSocket)
+    bool mirror_enabled_ = false;
 
   private:
 
@@ -62,13 +67,38 @@ namespace tello_driver
 
     void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
 
+    void mirror_callback(
+      const std::shared_ptr<rmw_request_id_t> request_header,
+      const std::shared_ptr<tello_interfaces::srv::SetMirror::Request> request,
+      std::shared_ptr<tello_interfaces::srv::SetMirror::Response> response);
+
+    void reconnect_callback(
+      const std::shared_ptr<rmw_request_id_t> request_header,
+      const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+      std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+
     // Sockets
     std::unique_ptr<CommandSocket> command_socket_;
     std::unique_ptr<StateSocket> state_socket_;
     std::unique_ptr<VideoSocket> video_socket_;
 
+    // Stored connection parameters (used for reconnect)
+    std::string drone_ip_;
+    unsigned short drone_port_ = 8889;
+    unsigned short command_port_ = 38065;
+    unsigned short data_port_ = 8890;
+    unsigned short video_port_ = 11111;
+    std::string camera_info_path_;
+
+    // Reconnect service
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reconnect_srv_;
+
+    // Attempt to reconnect to the drone; returns true on success
+    bool attempt_reconnect();
+
     // ROS services
     rclcpp::Service<tello_msgs::srv::TelloAction>::SharedPtr command_srv_;
+    rclcpp::Service<tello_interfaces::srv::SetMirror>::SharedPtr mirror_srv_;
 
     // ROS subscriptions
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
@@ -94,6 +124,8 @@ namespace tello_driver
     rclcpp::Time receive_time();
 
     virtual void timeout();
+    // Stop socket listening and join thread
+    void stop();
 
   protected:
 

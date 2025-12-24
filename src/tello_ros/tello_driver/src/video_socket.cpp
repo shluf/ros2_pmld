@@ -89,6 +89,11 @@ namespace tello_driver
 
           // Convert to cv::Mat
           cv::Mat mat{frame.height, frame.width, CV_8UC3, bgr24};
+          
+          // Apply mirror if enabled
+          if (driver_->mirror_enabled_) {
+            cv::flip(mat, mat, 1);  // Horizontal flip
+          }
 
           // Display
           cv::imshow("frame", mat);
@@ -116,8 +121,8 @@ namespace tello_driver
         next += consumed;
       }
     }
-    catch (std::runtime_error e) {
-      RCLCPP_ERROR(driver_->get_logger(), e.what());
+    catch (const std::exception &e) {
+      RCLCPP_ERROR(driver_->get_logger(), "Video decode error: %s", e.what());
     }
   }
 

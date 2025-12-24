@@ -2,6 +2,9 @@
 
 #include "ros2_shared/context_macros.hpp"
 
+#include <thread>
+#include <chrono>
+
 using asio::ip::udp;
 
 namespace tello_driver
@@ -54,6 +57,16 @@ namespace tello_driver
       "tello_action", std::bind(&TelloDriverNode::command_callback, this,
                                 std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 
+    // Mirror service
+    mirror_srv_ = create_service<tello_interfaces::srv::SetMirror>(
+      "set_mirror", std::bind(&TelloDriverNode::mirror_callback, this,
+                              std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+
+    // Reconnect service (allows GUI or external nodes to request a reconnect)
+    reconnect_srv_ = create_service<std_srvs::srv::Trigger>(
+      "reconnect", std::bind(&TelloDriverNode::reconnect_callback, this,
+                               std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+
     // ROS subscription
     cmd_vel_sub_ = create_subscription<geometry_msgs::msg::Twist>(
       "cmd_vel", 1, std::bind(&TelloDriverNode::cmd_vel_callback, this, std::placeholders::_1));
@@ -71,15 +84,23 @@ namespace tello_driver
 
     // NOTE: This is not setup to dynamically update parameters after ths node is running.
 
-    RCLCPP_INFO(get_logger(), "Drone at %s:%d", cxt.drone_ip_.c_str(), cxt.drone_port_);
-    RCLCPP_INFO(get_logger(), "Listening for command responses on localhost:%d", cxt.command_port_);
-    RCLCPP_INFO(get_logger(), "Listening for data on localhost:%d", cxt.data_port_);
-    RCLCPP_INFO(get_logger(), "Listening for video on localhost:%d", cxt.video_port_);
+    // Store connection parameters for reconnect
+    drone_ip_ = cxt.drone_ip_;
+    drone_port_ = static_cast<unsigned short>(cxt.drone_port_);
+    command_port_ = static_cast<unsigned short>(cxt.command_port_);
+    data_port_ = static_cast<unsigned short>(cxt.data_port_);
+    video_port_ = static_cast<unsigned short>(cxt.video_port_);
+    camera_info_path_ = cxt.camera_info_path_;
+
+    RCLCPP_INFO(get_logger(), "Drone at %s:%d", drone_ip_.c_str(), drone_port_);
+    RCLCPP_INFO(get_logger(), "Listening for command responses on localhost:%d", command_port_);
+    RCLCPP_INFO(get_logger(), "Listening for data on localhost:%d", data_port_);
+    RCLCPP_INFO(get_logger(), "Listening for video on localhost:%d", video_port_);
 
     // Sockets
-    command_socket_ = std::make_unique<CommandSocket>(this, cxt.drone_ip_, cxt.drone_port_, cxt.command_port_);
-    state_socket_ = std::make_unique<StateSocket>(this, cxt.data_port_);
-    video_socket_ = std::make_unique<VideoSocket>(this, cxt.video_port_, cxt.camera_info_path_);
+    command_socket_ = std::make_unique<CommandSocket>(this, drone_ip_, drone_port_, command_port_);
+    state_socket_ = std::make_unique<StateSocket>(this, data_port_);
+    video_socket_ = std::make_unique<VideoSocket>(this, video_port_, camera_info_path_);
   }
 
   TelloDriverNode::~TelloDriverNode()
@@ -115,6 +136,37 @@ namespace tello_driver
          << " " << static_cast<int>(round(msg->angular.z * -100));
       command_socket_->initiate_command(rc.str(), false);
     }
+  }
+
+  void TelloDriverNode::mirror_callback(
+    const std::shared_ptr<rmw_request_id_t> request_header,
+    const std::shared_ptr<tello_interfaces::srv::SetMirror::Request> request,
+    std::shared_ptr<tello_interfaces::srv::SetMirror::Response> response)
+  {
+    (void) request_header;
+    mirror_enabled_ = request->mirror;
+    response->success = true;
+    response->current_state = mirror_enabled_;
+    response->message = mirror_enabled_ ? "Mirror enabled" : "Mirror disabled";
+    RCLCPP_INFO(get_logger(), "Mirror mode: %s", mirror_enabled_ ? "ON" : "OFF");
+  }
+
+  void TelloDriverNode::reconnect_callback(
+    const std::shared_ptr<rmw_request_id_t> request_header,
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+  {
+    (void) request_header;
+    (void) request;
+    bool ok = false;
+    try {
+      ok = attempt_reconnect();
+    } catch (const std::exception &e) {
+      RCLCPP_ERROR(get_logger(), "Reconnect failed: %s", e.what());
+      ok = false;
+    }
+    response->success = ok;
+    response->message = ok ? "Reconnect successful" : "Reconnect failed";
   }
 
   // Do work every second
@@ -173,6 +225,39 @@ namespace tello_driver
       command_socket_->initiate_command("rc 0 0 0 0", false);
       return;
     }
+  }
+
+  bool TelloDriverNode::attempt_reconnect()
+  {
+    RCLCPP_INFO(get_logger(), "Attempting reconnect to drone %s:%d", drone_ip_.c_str(), drone_port_);
+
+    // Stop sockets safely
+    try {
+      if (command_socket_) command_socket_->stop();
+    } catch (...) {}
+    try {
+      if (state_socket_) state_socket_->stop();
+    } catch (...) {}
+    try {
+      if (video_socket_) video_socket_->stop();
+    } catch (...) {}
+
+    // Short backoff
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    try {
+      // Recreate sockets
+      command_socket_.reset(); state_socket_.reset(); video_socket_.reset();
+      command_socket_ = std::make_unique<CommandSocket>(this, drone_ip_, drone_port_, command_port_);
+      state_socket_ = std::make_unique<StateSocket>(this, data_port_);
+      video_socket_ = std::make_unique<VideoSocket>(this, video_port_, camera_info_path_);
+    } catch (const std::exception &e) {
+      RCLCPP_ERROR(get_logger(), "Reconnect failed: %s", e.what());
+      return false;
+    }
+
+    RCLCPP_INFO(get_logger(), "Reconnect complete");
+    return true;
   }
 
 } // namespace tello_driver
